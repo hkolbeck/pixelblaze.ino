@@ -10,8 +10,9 @@ project(${PROJECT_NAME})
 # Define additional source and header files or default arduino sketch files
 # These files are now added to the sketch file, if the sketch is defined.
 set(${PROJECT_NAME}_SRCS src/PixelblazeClient.cpp)
-set(${PROJECT_NAME}_HDRS PixelblazeClient.h, PixelblazeHandlers.h, src/PixelblazeSDBuffer.h)
+set(${PROJECT_NAME}_HDRS src/PixelblazeClient.h src/PixelblazeHandlers.h src/PixelblazeSDBuffer.h)
 
+include_directories(lib)
 ### Additional static libraries to include in the target.
 # set(${PROJECT_NAME}_LIBS)
 

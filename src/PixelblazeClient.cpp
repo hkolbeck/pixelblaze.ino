@@ -1,7 +1,6 @@
 #include "PixelblazeClient.h"
 #include "PixelblazeHandlers.h"
 
-#include <ctype.h>
 #include <ArduinoJson.h>
 #include <ArduinoHttpClient.h>
 
@@ -9,7 +8,7 @@ PixelblazeClient::PixelblazeClient(
         WebSocketClient& _wsClient,
         PixelblazeBuffer& _binaryBuffer,
         PixelblazeUnrequestedHandler& _unrequestedHandler,
-        ClientConfig& _clientConfig = defaultConfig) {
+        ClientConfig& _clientConfig) {
 
     wsClient = _wsClient;
     binaryBuffer = _binaryBuffer;
@@ -18,12 +17,13 @@ PixelblazeClient::PixelblazeClient(
 
     json = doc(clientConfig.jsonBufferBytes);
     byteBuffer = new uint8_t[clientConfig.binaryBufferBytes];
-    previewFrameBuff = new uint8_t[clientConfig.framePreviewBufferBytes];
+    previewFrameBuffer = new uint8_t[clientConfig.framePreviewBufferBytes];
     textReadBuffer = new char[clientConfig.textReadBufferBytes];
     controls = new Control[clientConfig.controlLimit];
     peers = new Peer[clientConfig.peerLimit];
     replyQueue = new ReplyHandler*[clientConfig.replyQueueSize];
-    sequencerState = new Control[clientConfig.controlLimit] playlist.items = new PlaylistItem[clientConfig.playlistLimit];
+    sequencerState.controls = new Control[clientConfig.controlLimit];
+    playlist.items = new PlaylistItem[clientConfig.playlistLimit];
     playlistUpdate.items = new PlaylistItem[clientConfig.playlistLimit];
 }
 
@@ -383,7 +383,7 @@ void PixelblazeClient::checkForInbound() {
     uint32_t startTime = time();
 
     int read = wsClient.parseMessage();
-    while (read > 0 && startTime + checkDurationMs > time()) {
+    while (read > 0 && startTime + clientConfig.maxInboundCheckMs > time()) {
         int format = wsClient.messageType();
         while (queueLength() > 0 && replyQueue[queueFront].isSatisfied()) {
             dequeueReply();
@@ -743,7 +743,7 @@ void PixelblazeClient::dispatchBinaryReply(ReplyHandler* handler) {
             break;
         case HANDLER_PREVIEW_IMG:
             auto specHandler = (PreviewImageReplyHandler*)binHandler;
-            usize_t buffIdx = 0;
+            size_t buffIdx = 0;
             int peek = stream.peek();
             while (peek >= 0 && peek < 0xFF && buffIdx < clientConfig.textReadBufferBytes) {
                 stream.read();
@@ -783,7 +783,7 @@ String PixelblazeClient::humanizeVarName(String& camelCaseVar) {
         return "Slider";
     }
 
-    usize_t startIdx = 0;
+    size_t startIdx = 0;
     if (camelCaseVar.startsWith("slider")) {
         startIdx = 6;
     } else {
@@ -791,7 +791,7 @@ String PixelblazeClient::humanizeVarName(String& camelCaseVar) {
     }
 
     int wordStarts[10];
-    usize_t numStarts = 0;
+    size_t numStarts = 0;
     for (int idx = startIdx; idx < camelCaseVar.length(); idx++) {
         if (isupper(camelCaseVar.charAt(idx))) {
             wordStarts[numStarts] = idx;
@@ -849,6 +849,9 @@ void PixelblazeClient::handleUnrequestedJson() {
         //This is also sent as part of the response to getConfig
         parseSequencerState();
         unrequestedHandler.handlePatternChange(sequencerState);
+    } else if (json.containsKey("playlist")) {
+        //TODO
+        //unrequestedHandler.handlePlaylistChange()
     }
 }
 
@@ -860,7 +863,7 @@ bool handleUnrequestedBinary(int frameType) {
         return true;
     } else if (frameType == BIN_TYPE_EXPANDER_CONFIG) {
         // Expander configs can come in out of order, check if one has been requested
-        usize_t queuePos = queueFront;
+        size_t queuePos = queueFront;
         while (queuePos != queueBack) {
             if (replyQueue[queuePos].type == FORMAT_BINARY && ((BinaryReplyHandler*)replyQueue[queuePos]).binType == BIN_TYPE_EXPANDER_CONFIG) {
                 dispatchBinaryReply(replyQueue[queuePos]);
@@ -995,7 +998,7 @@ void PixelblazeClient::compactQueue() {
 }
 
 bool AllPatternIterator::next(PatternIdentifiers& fillMe) {
-    usize_t buffIdx = 0;
+    size_t buffIdx = 0;
     int read = stream.read();
     if (read < 0) {
         return false;
