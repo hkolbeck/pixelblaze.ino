@@ -20,123 +20,15 @@
 
 static String defaultPlaylist = String("_defaultplaylist_");
 
-struct Stats {
-    float fps = 0;
-    int vmerr = 0;
-    int vmerrpc = 0;
-    int memBytes = 0;
-    int expansions = 0;
-    int renderType = 0;
-    int uptimeMs = 0;
-    int storageBytesUsed = 0;
-    int storageBytesSize = 0;
-    int rr0 = 0;
-    int rr1 = 0;
-    int rebootCounter = 0;
-};
-
-struct Control {
-    String name = "";
-    float value = 0;
-};
-
-struct SequencerState {
-    String name = "";
-    String activeProgramId = "";
-    Control *controls = nullptr;
-    size_t controlCount = 0;
-    int sequencerMode = 0;
-    bool runSequencer = false;
-    int playlistPos = 0;
-    String playlistId = "";
-    int ttlMs = 0;
-    int remainingMs = 0;
-};
-
-struct Settings {
-    String name = "";
-    String brandName = "";
-    int pixelCount = 0;
-    float brightness = 0;
-    int maxBrightness = 0;
-    String colorOrder = "";
-    int dataSpeed = 0;
-    int ledType = 0;
-    int sequenceTimerMs = 0;
-    int transitionDurationMs = 0;
-    int sequencerMode = 0;
-    bool runSequencer = false;
-    bool simpleUiMode = false;
-    bool learningUiMode = false;
-    bool discoveryEnabled = false;
-    String timezone = "";
-    bool autoOffEnable = false;
-    String autoOffStart = "";
-    String autoOffEnd = "";
-    int cpuSpeedMhz = 0;
-    bool networkPowerSave = false;
-    int mapperFit = 0;
-    int leaderId = 0;
-    int nodeId = 0;
-    int soundSrc = 0;
-    int accelSrc = 0;
-    int lightSrc = 0;
-    int analogSrc = 0;
-    int exp = 0;
-    String version = "";
-    int chipId = 0;
-};
-
-struct Peer {
-    //TODO
-};
-
-struct PlaylistItem {
-    String id = "";
-    int durationMs = 0;
-};
-
-struct Playlist {
-    String id = "";
-    int position = 0;
-    int currentDurationMs = 0;
-    int remainingCurrentMs = 0;
-    PlaylistItem *items = nullptr;
-    int numItems = 0;
-};
-
-struct PlaylistUpdate {
-    String id = "";
-    PlaylistItem *items = nullptr;
-    int numItems = 0;
-};
-
-struct ExpanderConfig {
-    //TODO
-};
-
-struct ClientConfig {
-    size_t jsonBufferBytes = 4096;
-    size_t binaryBufferBytes = 1024;
-    size_t replyQueueSize = 100;
-    size_t maxResponseWaitMs = 5000;
-    size_t maxInboundCheckMs = 300;
-    size_t framePreviewBufferBytes = 300;
-    size_t textReadBufferBytes = 128;
-    size_t syncPollWaitMs = 5;
-    size_t controlLimit = 25;
-    size_t peerLimit = 25;
-    size_t playlistLimit = 150;
-};
 static ClientConfig defaultConfig = {};
 
 class PixelblazeBuffer {
 public:
-    virtual Stream makeWriteStream(String key, bool append) = 0;
+    virtual CloseableStream *makeWriteStream(String key, bool append) {};
 
-    virtual Stream makeReadStream(String key) = 0;
+    virtual CloseableStream *makeReadStream(String key) {};
 
-    virtual void cleanupStream(String key) = 0;
+    virtual void deleteStreamResults(String key) {};
 
     virtual void garbageCollect() {};
 };
@@ -215,14 +107,22 @@ public:
 
     bool getRawText(RawTextHandler &replyHandler, JsonDocument &request);
 
-    String humanizeVarName(String &camelCaseVar);
-
-    String humanizeDataSize(int bytes);
+    static String humanizeVarName(String &camelCaseVar, int maxWords = 10);
 
 private:
     void weedExpiredReplies();
 
-    int queueLength();
+    void seekingTextHasText();
+
+    void seekingBinaryHasText();
+
+    void seekingTextHasBinary();
+
+    void seekingBinaryHasBinary();
+
+    bool readBinaryToStream(String &bufferId, bool append);
+
+    size_t queueLength();
 
     void dispatchTextReply(ReplyHandler *handler);
 
@@ -230,9 +130,15 @@ private:
 
     void handleUnrequestedJson();
 
+    bool handleUnrequestedBinary(int frameType);
+
     bool enqueueReply(ReplyHandler *handler);
 
     bool enqueueReplies(int, ...);
+
+    void dequeueReply();
+
+    void compactQueue();
 
     void parseSequencerState();
 
@@ -240,7 +146,7 @@ private:
 
 private:
     WebSocketClient wsClient;
-    PixelblazeBuffer& binaryBuffer;
+    PixelblazeBuffer &binaryBuffer;
     PixelblazeUnrequestedHandler unrequestedHandler;
     ClientConfig clientConfig;
 

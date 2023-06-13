@@ -4,6 +4,17 @@
 #include "PixelblazeClient.h"
 #include <SD.h>
 
+//Should only ever be invoked for streams that are actually files
+void closeFileStream(Stream* stream) {
+    File* asFile = (File*) stream;
+    asFile->close();
+}
+
+size_t bulkWrite(Stream* stream, const uint8_t *buffer, size_t size) {
+    File* asFile = (File*) stream;
+    return asFile->write(buffer, size);
+}
+
 class PixelblazeSDBuffer : PixelblazeBuffer {
 public:
     PixelblazeSDBuffer(String &_root, bool (*_isTrash)(File)) {
@@ -11,27 +22,29 @@ public:
         isTrash = _isTrash;
     }
 
-    virtual Stream makeWriteStream(String &bufferId, bool append) {
+    virtual CloseableStream* makeWriteStream(String &bufferId, bool append) {
         String path = root + bufferId;
 
         //SD docs are unclear about whether FILE_WRITE will nuke existing, and code is convoluted enough that
         //finding the impl being called eludes me. If it doesn't we'll have to nuke manually.
-        return SD.open(path, append ? O_APPEND : O_WRITE);
+        File f = SD.open(path, append ? O_APPEND : O_WRITE);
+        return new CloseableStream(&f, bulkWrite, closeFileStream);
     }
 
-    virtual Stream makeReadStream(String &bufferId) {
+    virtual CloseableStream* makeReadStream(String &bufferId) {
         String path = root + bufferId;
-        return SD.open(path, FILE_READ);
+        File f = SD.open(path, FILE_READ);
+        return new CloseableStream(&f, bulkWrite, closeFileStream);
     }
 
-    virtual void cleanupStream(String &bufferId) {
+    virtual void deleteStreamResults(String &bufferId) {
         String path = root + bufferId;
         if (!SD.remove(path)) {
             Serial.print("Failed to delete file: ");
             Serial.println(path);
         }
     }
-    
+
     void garbageCollect() override {
         File rootDir = SD.open(root);
         if (!rootDir || !rootDir.isDirectory()) {

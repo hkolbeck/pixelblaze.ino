@@ -4,6 +4,7 @@
 #include <ArduinoHttpClient.h>
 #include <ArduinoJson.h>
 
+#include "PixelblazeCommon.h"
 #include "PixelblazeClient.h"
 
 #define BIN_TYPE_PUT_SOURCE 1
@@ -14,6 +15,8 @@
 #define BIN_TYPE_GET_PROGRAM_LIST 7
 #define BIN_TYPE_PUT_PIXEL_MAP 8
 #define BIN_TYPE_EXPANDER_CONFIG 9
+
+static String GARBAGE = "GARBAGE";
 
 /*
   Base class for all objects which signify a command waiting for a response. Library users should never see this name
@@ -32,9 +35,13 @@ protected:
 public:
     virtual ~ReplyHandler() = default;
 
-    virtual bool shouldDeleteBuffer() = 0;
+    virtual bool shouldDeleteBuffer() {
+        return true;
+    };
 
-    virtual bool jsonMatches(JsonDocument &json) = 0;
+    virtual bool jsonMatches(JsonDocument &json) {
+        return false;
+    };
 
     virtual bool cleanup() {}
 
@@ -45,7 +52,7 @@ public:
 public:
     int replyType;
     int format;
-    uint32_t requestTsMs;
+    unsigned long requestTsMs;
     bool satisfied;
 };
 
@@ -54,7 +61,7 @@ public:
 */
 #define HANDLER_SYNC 0
 
-class SyncHandler : ReplyHandler {
+class SyncHandler : public ReplyHandler {
 public:
     SyncHandler(ReplyHandler *_wrappedHandler, bool *_trueWhenFinished)
             : ReplyHandler(HANDLER_SYNC, _wrappedHandler->format) {
@@ -66,7 +73,7 @@ public:
         delete wrappedHandler;
     }
 
-    ReplyHandler *getWrapped() {
+    ReplyHandler *getWrapped() const {
         return wrappedHandler;
     }
 
@@ -82,15 +89,15 @@ public:
         return wrappedHandler->jsonMatches(json);
     }
 
-private:
     ReplyHandler *wrappedHandler;
+private:
     bool *trueWhenFinished;
 };
 
 /*
   Base class for all commands that receive JSON as a response, users should never interact
 */
-class TextReplyHandler : ReplyHandler {
+class TextReplyHandler : public ReplyHandler {
 protected:
     explicit TextReplyHandler(int replyType)
             : ReplyHandler(replyType, TYPE_TEXT) {};
@@ -99,7 +106,7 @@ public:
     ~TextReplyHandler() override = default;
 
     //Text handlers never buffer
-    virtual bool shouldDeleteBuffer() {
+    bool shouldDeleteBuffer() override {
         return false;
     }
 };
@@ -107,7 +114,7 @@ public:
 /*
   Base class for all commands that receive a possibly multipart binary-encoded message. Users should never interact
 */
-class BinaryReplyHandler : ReplyHandler {
+class BinaryReplyHandler : public ReplyHandler {
 protected:
     BinaryReplyHandler(int replyType, String &_bufferId, int _binType, bool _clean)
             : ReplyHandler(replyType, TYPE_BINARY) {
@@ -118,7 +125,7 @@ protected:
 
 public:
 
-    ~BinaryReplyHandler() override {}
+    ~BinaryReplyHandler() override = default;
 
     //If clean is true the buffer will have myPixelblazeBuffer.cleanupStream(id/targetStream) called after the call to the
     //appropriate handle() returns, if not it won't. The buffered binary data can be opened with
@@ -157,23 +164,24 @@ private:
 */
 #define HANDLER_RAW_BINARY 1
 
-class RawBinaryHandler : BinaryReplyHandler {
+class RawBinaryHandler : public BinaryReplyHandler {
 public:
     RawBinaryHandler(String &bufferId, int binType, bool clean = true)
             : BinaryReplyHandler(HANDLER_RAW_BINARY, bufferId, binType, clean) {};
 
     ~RawBinaryHandler() override = default;
 
-    virtual void handle(Stream &stream) = 0;
+    virtual void handle(CloseableStream *stream) {};
 };
 
-class NoopRawBinaryHandler : RawBinaryHandler {
-    NoopRawBinaryHandler(String &bufferId, int binType, bool clean = true, bool _satisfaction = true)
-            : RawBinaryHandler(bufferId, binType, clean) {
+class NoopRawBinaryHandler : public RawBinaryHandler {
+public:
+    explicit NoopRawBinaryHandler(int binType, bool clean = true, bool _satisfaction = true)
+            : RawBinaryHandler(GARBAGE, binType, clean) {
         satisfaction = _satisfaction;
     }
 
-    void handle(Stream &stream) override {}
+    void handle(CloseableStream *stream) override {}
 
     bool isSatisfied() override {
         return satisfaction;
@@ -189,18 +197,19 @@ private:
 */
 #define HANDLER_RAW_TEXT 2
 
-class RawTextHandler : TextReplyHandler {
+class RawTextHandler : public TextReplyHandler {
 public:
     RawTextHandler()
             : TextReplyHandler(HANDLER_RAW_TEXT) {};
 
     ~RawTextHandler() override = default;
 
-    virtual void handle(JsonDocument &json) = 0;
+    virtual void handle(JsonDocument &json) {};
     //Implementations must also include 'bool jsonMatches(json)';
 };
 
-class NoopRawTextHandler : RawTextHandler {
+class NoopRawTextHandler : public RawTextHandler {
+public:
     explicit NoopRawTextHandler(bool _satisfaction = true) : RawTextHandler() {
         satisfaction = _satisfaction;
     }
@@ -219,39 +228,6 @@ private:
     bool satisfaction;
 };
 
-
-/*
-  Fetches (id, name) info about all available patterns
-*/
-#define HANDLER_ALL_PATTERNS 3
-
-class AllPatternsReplyHandler : BinaryReplyHandler {
-public:
-    explicit AllPatternsReplyHandler(String& bufferId, bool clean = true)
-            : BinaryReplyHandler(HANDLER_ALL_PATTERNS, bufferId, BIN_TYPE_GET_PROGRAM_LIST, clean) {};
-
-    ~AllPatternsReplyHandler() override = default;
-
-    virtual void handle(AllPatternIterator &iterator) = 0;
-};
-
-class NoopAllPatternsReplyHandler : AllPatternsReplyHandler {
-public:
-    explicit NoopAllPatternsReplyHandler(bool _satisfaction = true)
-            : AllPatternsReplyHandler() {
-        satisfaction = _satisfaction;
-    }
-
-    virtual void handle(AllPatternIterator &iterator) {}
-
-    virtual bool isSatisfied() {
-        return satisfaction;
-    }
-
-private:
-    bool satisfaction;
-};
-
 struct PatternIdentifiers {
     String id;
     String name;
@@ -259,14 +235,51 @@ struct PatternIdentifiers {
 
 class AllPatternIterator {
 public:
-    explicit AllPatternIterator(Stream& _stream) {
-        stream = _stream;
-    }
+    explicit AllPatternIterator(
+            CloseableStream *stream,
+            char *readBuffer,
+            size_t bufferLen) : stream(stream),
+                                readBuffer(readBuffer),
+                                bufferLen(bufferLen) {}
 
     bool next(PatternIdentifiers &fillMe);
 
 private:
-    Stream& stream;
+    CloseableStream *stream;
+    char *readBuffer;
+    size_t bufferLen;
+};
+
+/*
+  Fetches (id, name) info about all available patterns
+*/
+#define HANDLER_ALL_PATTERNS 3
+
+class AllPatternsReplyHandler : public BinaryReplyHandler {
+public:
+    explicit AllPatternsReplyHandler(String &bufferId, bool clean = true)
+            : BinaryReplyHandler(HANDLER_ALL_PATTERNS, bufferId, BIN_TYPE_GET_PROGRAM_LIST, clean) {};
+
+    ~AllPatternsReplyHandler() override = default;
+
+    virtual void handle(AllPatternIterator &iterator) {};
+};
+
+class NoopAllPatternsReplyHandler : public AllPatternsReplyHandler {
+public:
+    explicit NoopAllPatternsReplyHandler(bool _satisfaction = true)
+            : AllPatternsReplyHandler(GARBAGE) {
+        satisfaction = _satisfaction;
+    }
+
+    void handle(AllPatternIterator &iterator) override {}
+
+    bool isSatisfied() override {
+        return satisfaction;
+    }
+
+private:
+    bool satisfaction;
 };
 
 /*
@@ -275,29 +288,30 @@ private:
 */
 #define HANDLER_PLAYLIST 4
 
-class PlaylistReplyHandler : TextReplyHandler {
+class PlaylistReplyHandler : public TextReplyHandler {
 public:
     PlaylistReplyHandler()
             : TextReplyHandler(HANDLER_PLAYLIST) {};
 
-    virtual ~PlaylistReplyHandler() {}
+    ~PlaylistReplyHandler() override = default;
 
-    virtual void handle(Playlist &playlist) = 0;
+    virtual void handle(Playlist &playlist) {};
 
-    virtual bool jsonMatches(JsonDocument &json) {
+    bool jsonMatches(JsonDocument &json) override {
         return json["playlist"].containsKey("position");
     }
 };
 
-class NoopPlaylistReplyHandler : PlaylistReplyHandler {
-    NoopPlaylistReplyHandler(bool _satisfaction = true)
+class NoopPlaylistReplyHandler : public PlaylistReplyHandler {
+public:
+    explicit NoopPlaylistReplyHandler(bool _satisfaction = true)
             : PlaylistReplyHandler() {
         satisfaction = _satisfaction;
     }
 
-    virtual void handle(Playlist &playlist) {}
+    void handle(Playlist &playlist) override {}
 
-    virtual bool isSatisfied() {
+    bool isSatisfied() override {
         return satisfaction;
     }
 
@@ -311,28 +325,28 @@ private:
 */
 #define HANDLER_PEERS 5
 
-class PeersReplyHandler : TextReplyHandler {
+class PeersReplyHandler : public TextReplyHandler {
 public:
     PeersReplyHandler()
             : TextReplyHandler(HANDLER_PEERS) {};
 
     ~PeersReplyHandler() override = default;
 
-    virtual void handle(Peer *peers, size_t numPeers) = 0;
+    virtual void handle(Peer *peers, size_t numPeers) {};
 
-    virtual bool jsonMatches(JsonDocument &json) {
-        return json.containsKey("peers")
+    bool jsonMatches(JsonDocument &json) override {
+        return json.containsKey("peers");
     }
 };
 
-class NoopPeersReplyHandler : PeersReplyHandler {
+class NoopPeersReplyHandler : public PeersReplyHandler {
 public:
     explicit NoopPeersReplyHandler(bool _satisfaction = true)
             : PeersReplyHandler() {
         satisfaction = _satisfaction;
     }
 
-    virtual void handle(Peer *peers, size_t numPeers) {}
+    void handle(Peer *peers, size_t numPeers) override {}
 
     bool isSatisfied() override {
         return satisfaction;
@@ -347,24 +361,24 @@ private:
 */
 #define HANDLER_PREVIEW_IMG 6
 
-class PreviewImageReplyHandler : BinaryReplyHandler {
+class PreviewImageReplyHandler : public BinaryReplyHandler {
 public:
     explicit PreviewImageReplyHandler(String &bufferId, bool clean = true)
             : BinaryReplyHandler(HANDLER_PREVIEW_IMG, bufferId, BIN_TYPE_PREVIEW_IMAGE, clean) {};
 
     ~PreviewImageReplyHandler() override = default;
 
-    virtual void handle(String &patternId, Stream &stream) = 0;
+    virtual void handle(String &patternId, CloseableStream *stream) {};
 };
 
-class NoopPreviewImageReplyHandler : PreviewImageReplyHandler {
+class NoopPreviewImageReplyHandler : public PreviewImageReplyHandler {
 public:
-    NoopPreviewImageReplyHandler(bool _satisfaction = true)
-            : PreviewImageReplyHandler() {
+    explicit NoopPreviewImageReplyHandler(bool _satisfaction = true)
+            : PreviewImageReplyHandler(GARBAGE) {
         satisfaction = _satisfaction;
     }
 
-    void handle(String &patternId, Stream &stream) override {}
+    void handle(String &patternId, CloseableStream *stream) override {}
 
     bool isSatisfied() override {
         return satisfaction;
@@ -380,28 +394,28 @@ private:
 */
 #define HANDLER_SETTINGS 7
 
-class SettingsReplyHandler : TextReplyHandler {
+class SettingsReplyHandler : public TextReplyHandler {
 public:
     SettingsReplyHandler()
             : TextReplyHandler(HANDLER_SETTINGS) {};
 
     ~SettingsReplyHandler() override = default;
 
-    virtual void handle(Settings &settings) = 0;
+    virtual void handle(Settings &settings) {};
 
     bool jsonMatches(JsonDocument &json) override {
         return json.containsKey("pixelCount");
     }
 };
 
-class NoopSettingsReplyHandler : SettingsReplyHandler {
+class NoopSettingsReplyHandler : public SettingsReplyHandler {
 public:
     explicit NoopSettingsReplyHandler(bool _satisfaction = true)
             : SettingsReplyHandler() {
         satisfaction = _satisfaction;
     }
 
-    virtual void handle(Settings &settings) {}
+    void handle(Settings &settings) override {}
 
     bool isSatisfied() override {
         return satisfaction;
@@ -417,20 +431,21 @@ private:
 */
 #define HANDLER_SEQ 8
 
-class SequencerReplyHandler : TextReplyHandler {
+class SequencerReplyHandler : public TextReplyHandler {
+public:
     SequencerReplyHandler()
             : TextReplyHandler(HANDLER_SEQ) {};
 
-    virtual ~SequencerReplyHandler() {}
+    ~SequencerReplyHandler() override = default;
 
-    virtual void handle(SequencerState &sequencerState) = 0;
+    virtual void handle(SequencerState &sequencerState) {};
 
     bool jsonMatches(JsonDocument &json) override {
-        return json.containsKey("activeProgram")
+        return json.containsKey("activeProgram");
     }
 };
 
-class NoopSequencerReplyHandler : SequencerReplyHandler {
+class NoopSequencerReplyHandler : public SequencerReplyHandler {
 public:
     explicit NoopSequencerReplyHandler(bool _satisfaction = true)
             : SequencerReplyHandler() {
@@ -439,7 +454,7 @@ public:
 
     ~NoopSequencerReplyHandler() override = default;
 
-    virtual void handle(SequencerState &sequencerState) {}
+    void handle(SequencerState &sequencerState) override {}
 
     bool isSatisfied() override {
         return satisfaction;
@@ -455,24 +470,24 @@ private:
 */
 #define HANDLER_EXPANDER_CONF 9
 
-class ExpanderConfigReplyHandler : BinaryReplyHandler {
+class ExpanderConfigReplyHandler : public BinaryReplyHandler {
 public:
     explicit ExpanderConfigReplyHandler(String bufferId, bool clean = true)
             : BinaryReplyHandler(HANDLER_EXPANDER_CONF, bufferId, BIN_TYPE_EXPANDER_CONFIG, clean) {};
 
     ~ExpanderConfigReplyHandler() override = default;
 
-    virtual void handle(ExpanderConfig &expanderConfig) = 0;
+    virtual void handle(ExpanderConfig &expanderConfig) {};
 };
 
-class NoopExpanderConfigReplyHandler : ExpanderConfigReplyHandler {
+class NoopExpanderConfigReplyHandler : public ExpanderConfigReplyHandler {
 public:
     explicit NoopExpanderConfigReplyHandler(bool _satisfaction = true)
-            : ExpanderConfigReplyHandler() {
+            : ExpanderConfigReplyHandler(GARBAGE, bufferId) {
         satisfaction = _satisfaction;
     }
 
-    virtual void handle(ExpanderConfig &expanderConfig) {}
+    void handle(ExpanderConfig &expanderConfig) override {}
 
     bool isSatisfied() override {
         return satisfaction;
@@ -491,28 +506,28 @@ private:
 */
 #define HANDLER_PING 10
 
-class PingReplyHandler : TextReplyHandler {
+class PingReplyHandler : public TextReplyHandler {
 public:
     PingReplyHandler()
             : TextReplyHandler(HANDLER_PING) {};
 
     ~PingReplyHandler() override = default;
 
-    virtual void handle(int roundtripMs) = 0;
+    virtual void handle(unsigned long roundtripMs) {};
 
     bool jsonMatches(JsonDocument &json) override {
         return json.containsKey("ack");  //Lots of commands return this, nothing really to do about it
     }
 };
 
-class NoopPingReplyHandler : PingReplyHandler {
+class NoopPingReplyHandler : public PingReplyHandler {
 public:
     explicit NoopPingReplyHandler(bool _satisfaction = true)
             : PingReplyHandler() {
         satisfaction = _satisfaction;
     }
 
-    void handle(int roundtripMs) override {}
+    void handle(unsigned long roundtripMs) override {}
 
     bool isSatisfied() override {
         return satisfaction;
@@ -528,24 +543,24 @@ private:
 */
 #define HANDLER_PATTERN_CONTROLS 11
 
-class PatternControlReplyHandler : TextReplyHandler {
+class PatternControlReplyHandler : public TextReplyHandler {
 public:
     PatternControlReplyHandler()
             : TextReplyHandler(HANDLER_PATTERN_CONTROLS) {};
 
     ~PatternControlReplyHandler() override = default;
 
-    virtual void handle(Control *controls, int numControls) = 0;
+    virtual void handle(Control *controls, size_t numControls) {};
 };
 
-class NoopPatternControlReplyHandler : PatternControlReplyHandler {
+class NoopPatternControlReplyHandler : public PatternControlReplyHandler {
 public:
     explicit NoopPatternControlReplyHandler(bool _satisfaction = true)
             : PatternControlReplyHandler() {
         satisfaction = _satisfaction;
     }
 
-    virtual void handle(Control *controls, int numControls) {}
+    void handle(Control *controls, size_t numControls) override {}
 
     bool isSatisfied() override {
         return satisfaction;
@@ -558,7 +573,7 @@ private:
 // Not actually used like other handlers, just internally
 class PlaylistIndexHandler {
 public:
-    virtual void handle(int playlistIndex) = 0;
+    virtual void handle(int playlistIndex) {};
 };
 
 #endif
