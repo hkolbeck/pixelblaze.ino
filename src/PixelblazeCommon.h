@@ -8,6 +8,24 @@
 #define FORMAT_TEXT 0x1
 #define FORMAT_BINARY 0x2
 
+#define LED_TYPE_NONE 0
+#define LED_TYPE_APA102_SK9822_DOTSTAR 1
+#define LED_TYPE_WS2812_SK6812_NEOPIXEL 2
+#define LED_TYPE_WS2801 3
+#define LED_TYPE_OUTPUT_EXPANDER 5
+
+#define CHANNEL_TYPE_WS2812 1
+#define CHANNEL_TYPE_APA102_DATA 3
+#define CHANNEL_TYPE_APA102_CLOCK 4
+
+#define RENDER_TYPE_INVALID 0
+#define RENDER_TYPE_1D 1
+#define RENDER_TYPE_2D 2
+#define RENDER_TYPE_3D 3
+
+#define SOURCE_PREFER_REMOTE 0
+#define SOURCE_PREFER_LOCAL 1
+
 struct Stats {
     float fps = 0;
     int vmerr = 0;
@@ -48,7 +66,7 @@ struct Settings {
     float brightness = 0;
     int maxBrightness = 0;
     String colorOrder = "";
-    int dataSpeed = 0;
+    int dataSpeedHz = 0;
     int ledType = 0;
     int sequenceTimerMs = 0;
     int transitionDurationMs = 0;
@@ -77,10 +95,10 @@ struct Settings {
 
 struct Peer {
     int id;
-    String address;
+    String ipAddress;
     String name;
     String version;
-    int isFollowing;
+    bool isFollowing;
     int nodeId;
     size_t followerCount;
 };
@@ -105,18 +123,25 @@ struct PlaylistUpdate {
     int numItems = 0;
 };
 
-struct ExpanderConfig {
-    //TODO
+struct ExpanderChannel {
+    uint8_t channelId;
+    uint8_t ledType;
+    uint8_t numElements;
+    String* colorOrder;
+    uint16_t pixels;
+    uint16_t startIndex;
+    uint32_t frequency;
 };
 
 struct ClientConfig {
     size_t jsonBufferBytes = 4096;
-    size_t binaryBufferBytes = 1024;
+    size_t binaryBufferBytes = 1024 * 3; //Per the Wizard, frame previews could have up to 1024 pixels * 3 bytes
     size_t replyQueueSize = 100;
     size_t maxResponseWaitMs = 5000;
     size_t maxInboundCheckMs = 300;
     size_t textReadBufferBytes = 128;
     size_t syncPollWaitMs = 5;
+    size_t expanderChannelLimit = 64;
     size_t controlLimit = 25;
     size_t peerLimit = 25;
     size_t playlistLimit = 150;

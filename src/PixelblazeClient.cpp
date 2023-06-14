@@ -4,6 +4,7 @@
 
 #include <ArduinoJson.h>
 #include <WebSocketClient.h>
+#include "BufferUtils/BufferReader.h"
 
 PixelblazeClient::PixelblazeClient(
         WebSocketClient &wsClient,
@@ -16,6 +17,7 @@ PixelblazeClient::PixelblazeClient(
 
     byteBuffer = new uint8_t[clientConfig.binaryBufferBytes];
     textReadBuffer = new char[clientConfig.textReadBufferBytes];
+    expanderChannels = new ExpanderChannel[clientConfig.expanderChannelLimit];
     peers = new Peer[clientConfig.peerLimit];
     controls = new Control[clientConfig.controlLimit];
     replyQueue = new ReplyHandler *[clientConfig.replyQueueSize];
@@ -306,7 +308,7 @@ bool PixelblazeClient::setPixelCount(uint32_t pixels, bool saveToFlash) {
 bool PixelblazeClient::getSystemState(
         void (*settingsHandler)(Settings &),
         void (*seqHandler)(SequencerState &),
-        void (*expanderHandler)(ExpanderConfig &),
+        void (*expanderHandler)(ExpanderChannel *, size_t),
         int watchResponses,
         void (*onError)(int)) {
 
@@ -346,7 +348,7 @@ bool PixelblazeClient::getSequencerState(void (*seqHandler)(SequencerState &), v
     return getSystemState(noopSettings, seqHandler, noopExpander, WATCH_SEQ_REQ, onError);
 }
 
-bool PixelblazeClient::getExpanderConfig(void (*expanderHandler)(ExpanderConfig &), void (*onError)(int)) {
+bool PixelblazeClient::getExpanderConfig(void (*expanderHandler)(ExpanderChannel *, size_t), void (*onError)(int)) {
     return getSystemState(noopSettings, noopSequencer, expanderHandler, WATCH_EXPANDER_REQ, onError);
 }
 
@@ -728,35 +730,20 @@ void PixelblazeClient::dispatchTextReply(ReplyHandler *genHandler) {
         }
         case HANDLER_PEERS: {
             auto *peerHandler = (PeersReplyHandler *) handler;
-            /*
- * {
-    "peers": [
-        {
-            "id": 9173335,
-            "address": "192.168.1.107",
-            "name": "",
-            "ver": "",
-            "isFollowing": 0,
-            "nodeId": 0,
-            "followerCount": 0
-        },
-        ...
-    ]
-}
- */
+
             JsonArray peerArr = json["peers"];
             size_t peersFound = 0;
-            for (JsonVariant v : peerArr) {
+            for (JsonVariant v: peerArr) {
                 if (peersFound >= clientConfig.peerLimit) {
                     break;
                 }
 
                 JsonObject peer = v.as<JsonObject>();
                 peers[peersFound].id = peer["id"];
-                peers[peersFound].address = peer["address"].as<String>();
+                peers[peersFound].ipAddress = peer["address"].as<String>();
                 peers[peersFound].name = peer["name"].as<String>();
                 peers[peersFound].version = peer["ver"].as<String>();
-                peers[peersFound].isFollowing = peer["isFollowing"];
+                peers[peersFound].isFollowing = !! peer["isFollowing"].as<int>();
                 peers[peersFound].nodeId = peer["nodeId"];
                 peers[peersFound].followerCount = peer["followerCount"];
 
@@ -775,7 +762,7 @@ void PixelblazeClient::dispatchTextReply(ReplyHandler *genHandler) {
             settings.brightness = json["brightness"];
             settings.maxBrightness = json["maxBrightness"];
             settings.colorOrder = json["colorOrder"].as<String>();
-            settings.dataSpeed = json["dataSpeed"];
+            settings.dataSpeedHz = json["dataSpeedHz"];
             settings.ledType = json["ledType"];
             settings.sequenceTimerMs = json["sequenceTimer"];
             settings.transitionDurationMs = json["transitionDuration"];
@@ -815,6 +802,7 @@ void PixelblazeClient::dispatchTextReply(ReplyHandler *genHandler) {
             break;
         }
         case HANDLER_PATTERN_CONTROLS: {
+            //TODO
             break;
         }
         default: {
@@ -908,7 +896,32 @@ void PixelblazeClient::dispatchBinaryReply(ReplyHandler *handler) {
             break;
         }
         case HANDLER_EXPANDER_CONF: {
-            //TODO
+            auto *expanderChannelHandler = (ExpanderConfigReplyHandler *) handler;
+
+            size_t read = stream->readBytes(byteBuffer, EXPANDER_CHANNEL_BYTE_WIDTH);
+            size_t channelsFound = 0;
+            while (read == EXPANDER_CHANNEL_BYTE_WIDTH && channelsFound < clientConfig.expanderChannelLimit) {
+                //TODO: Do we really need to heap this? Is this because BufferReader hides the copy constructor?
+                auto *reader = new BufferReader(byteBuffer, read, 0);
+                auto channel = &expanderChannels[channelsFound];
+                reader->read(channel->channelId);
+                reader->read(channel->ledType);
+                reader->read(channel->numElements);
+
+                uint8_t colorOrderCode = 0;
+                reader->read(colorOrderCode);
+                channel->colorOrder = getColorOrder(colorOrderCode);
+
+                reader->read(channel->pixels);
+                reader->read(channel->startIndex);
+                reader->read(channel->frequency);
+
+                delete reader;
+                channelsFound++;
+                read = stream->readBytes(byteBuffer, EXPANDER_CHANNEL_BYTE_WIDTH);
+            }
+
+            expanderChannelHandler->handle(expanderChannels, numExpanderChannels);
             break;
         }
         default: {
@@ -1185,6 +1198,46 @@ bool PixelblazeClient::sendBinary(int binType, Stream &stream) {
 
             return true;
         }
+    }
+}
+
+
+// Extracted from the web JS
+static String BGR_STR = "BGR";
+static String BRG_STR = "BRG";
+static String GBR_STR = "GBR";
+static String RBG_STR = "RBG";
+static String GRB_STR = "GRB";
+static String RGB_STR = "RGB";
+static String WGRB_STR = "WGRB";
+static String WRGB_STR = "WRGB";
+static String GRBW_STR = "GRBW";
+static String RGBW_STR = "RGBW";
+String *PixelblazeClient::getColorOrder(uint8_t code) {
+    switch (code) {
+        case 6:
+            return &BGR_STR;
+        case 9:
+            return &BRG_STR;
+        case 18:
+            return &GBR_STR;
+        case 24:
+            return &RBG_STR;
+        case 33:
+            return &GRB_STR;
+        case 36:
+            return &RGB_STR;
+        case 54:
+            return &WGRB_STR;
+        case 57:
+            return &WRGB_STR;
+        case 225:
+            return &GRBW_STR;
+        case 228:
+            return &RGBW_STR;
+        default:
+            // Default in web code
+            return &BGR_STR;
     }
 }
 

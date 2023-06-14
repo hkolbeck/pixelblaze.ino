@@ -119,10 +119,12 @@ public:
     virtual void handlePatternChange(SequencerState &patternChange) {};
 
     /**
-     * Every time Pixelblaze completes a render cycle it can ship a binary representation of the first 100 pixels
-     * TODO: Is 100 correct?
+     * Every time Pixelblaze completes a render cycle it can ship a binary representation of a possibly cross-fuzzed
+     * view of the entire strip up to 1024 (r,g,b) pixels where each channel is aa byte.
      * Preview frames can be enabled/disabled by calling sendFramePreviews(bool). It's unclear what the default is.
-     * TODO: If the default is to send em, do we flip that?
+     * TODO: If the default is to send em, do we flip that? It looks like the web re-enables them every time the
+     * TODO: pattern changes.
+     *
      * @param previewPixelRGB Packed RGB data, with the first pixel r = preview[0], g = preview[1], b = preview[2]
      * @param len the length of the preview buffer in bytes.
      */
@@ -227,9 +229,8 @@ public:
     bool setPlaylistIndex(int idx);
 
     /**
-     * Advance the pattern forward one index
+     * Advance the pattern forward one index, wrapping if needed
      *
-     * TODO: Does it wrap? The UI prev button doesn't
      * @return true if the request was dispatched, false otherwise.
      */
     bool nextPattern();
@@ -361,9 +362,8 @@ public:
      *      mean but they're still returned.
      *  - Sequence:
      *      The current state of the pattern playing parts of the system.
-     *  - Expander Configuration:
-     *      //TODO: Not yet implemented
-     *      The configuration of the output expander.
+     *  - Expander Channel Configuration:
+     *      The configuration of the output expander if any.
      *
      *  IN NEED OF HELP: I don't have a system with an output expander to look at what exactly the traffic looks like
      *
@@ -385,7 +385,7 @@ public:
     bool getSystemState(
             void (*settingsHandler)(Settings &),
             void (*seqHandler)(SequencerState &),
-            void (*expanderHandler)(ExpanderConfig &),
+            void (*expanderHandler)(ExpanderChannel*, size_t),
             int watchResponses = WATCH_SETTING_REQ | WATCH_SEQ_REQ,
             void (*onError)(int) = ignoreError);
 
@@ -411,7 +411,7 @@ public:
      * @param expanderHandler handler for the non-ignored response
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getExpanderConfig(void (*expanderHandler)(ExpanderConfig &), void (*onError)(int) = ignoreError);
+    bool getExpanderConfig(void (*expanderHandler)(ExpanderChannel*, size_t), void (*onError)(int) = ignoreError);
 
     /**
      * Send a ping to the controller
@@ -536,11 +536,13 @@ private:
 
     bool sendBinary(int binType, Stream &stream);
 
+    String* getColorOrder(uint8_t code);
+
     static void noopSettings(Settings &s) {};
 
     static void noopSequencer(SequencerState &s) {};
 
-    static void noopExpander(ExpanderConfig &e) {};
+    static void noopExpander(ExpanderChannel* e, size_t c) {};
 
 private:
     WebSocketClient& wsClient;
@@ -555,9 +557,11 @@ private:
     SequencerState sequencerState;
     Stats statsEvent;
     Settings settings;
-    ExpanderConfig expanderConfig;
     Playlist playlist;
     PlaylistUpdate playlistUpdate;
+
+    ExpanderChannel* expanderChannels;
+    size_t numExpanderChannels = 0;
     Peer *peers;
     size_t peerCount = 0;
     Control *controls;

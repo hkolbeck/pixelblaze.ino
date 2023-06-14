@@ -23,6 +23,8 @@
 #define FAILED_MALFORMED_HANDLER 5
 #define FAILED_CONNECTION_LOST 6
 
+#define EXPANDER_CHANNEL_BYTE_WIDTH 12
+
 static String GARBAGE = "GARBAGE";
 
 /*
@@ -376,15 +378,15 @@ private:
 
 class ExpanderConfigReplyHandler : public BinaryReplyHandler {
 public:
-    explicit ExpanderConfigReplyHandler(void (*handlerFn)(ExpanderConfig &), String bufferId, bool clean,
+    explicit ExpanderConfigReplyHandler(void (*handlerFn)(ExpanderChannel*, size_t), String bufferId, bool clean,
                                         void (*onError)(int))
             : handlerFn(handlerFn), onError(onError),
               BinaryReplyHandler(HANDLER_EXPANDER_CONF, bufferId, BIN_TYPE_EXPANDER_CONFIG, clean) {};
 
     ~ExpanderConfigReplyHandler() override = default;
 
-    void handle(ExpanderConfig &expanderConfig) {
-        handlerFn(expanderConfig);
+    void handle(ExpanderChannel* channels, size_t channelCount) {
+        handlerFn(channels, channelCount);
     };
 
     void replyFailed(int cause) override {
@@ -392,7 +394,7 @@ public:
     }
 
 private:
-    void (*handlerFn)(ExpanderConfig &);
+    void (*handlerFn)(ExpanderChannel*, size_t);
 
     void (*onError)(int);
 };
