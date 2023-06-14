@@ -185,5 +185,4 @@ private:
     void (*closer)(Stream *);
 };
 
-
 #endif //PixelblazeStructs_h

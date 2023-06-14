@@ -17,10 +17,10 @@ include_directories(lib)
 # set(${PROJECT_NAME}_LIBS)
 
 ### Main sketch file
-# set(${PROJECT_NAME}_SKETCH pixelblaze_client.ino)
+set(${PROJECT_NAME}_SKETCH examples/CyclicalFade.ino)
 
 ### Add project directories into the build
-# add_subdirectory()
+#add_subdirectory()
 
 ### Additional settings to add non-standard or your own Arduino libraries.
 # For this example (libs will contain additional arduino libraries)

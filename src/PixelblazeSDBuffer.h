@@ -22,7 +22,7 @@ public:
         isTrash = _isTrash;
     }
 
-    virtual CloseableStream* makeWriteStream(String &bufferId, bool append) {
+    CloseableStream* makeWriteStream(String &bufferId, bool append) override {
         String path = root + bufferId;
 
         //SD docs are unclear about whether FILE_WRITE will nuke existing, and code is convoluted enough that
@@ -31,13 +31,13 @@ public:
         return new CloseableStream(&f, bulkWrite, closeFileStream);
     }
 
-    virtual CloseableStream* makeReadStream(String &bufferId) {
+    CloseableStream* makeReadStream(String &bufferId) override {
         String path = root + bufferId;
         File f = SD.open(path, FILE_READ);
         return new CloseableStream(&f, bulkWrite, closeFileStream);
     }
 
-    virtual void deleteStreamResults(String &bufferId) {
+    void deleteStreamResults(String &bufferId) override {
         String path = root + bufferId;
         if (!SD.remove(path)) {
             Serial.print("Failed to delete file: ");

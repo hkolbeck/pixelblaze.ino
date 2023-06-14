@@ -24,11 +24,15 @@ static ClientConfig defaultConfig = {};
 
 class PixelblazeBuffer {
 public:
-    virtual CloseableStream *makeWriteStream(String key, bool append) {};
+    virtual CloseableStream *makeWriteStream(String &key, bool append) {
+        return nullptr;
+    };
 
-    virtual CloseableStream *makeReadStream(String key) {};
+    virtual CloseableStream *makeReadStream(String &key) {
+        return nullptr;
+    };
 
-    virtual void deleteStreamResults(String key) {};
+    virtual void deleteStreamResults(String &key) {};
 
     virtual void garbageCollect() {};
 };
