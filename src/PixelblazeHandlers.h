@@ -497,7 +497,7 @@ public:
 
     ~PingReplyHandler() override = default;
 
-    virtual void handle(unsigned long roundtripMs) {};
+    virtual void handle(uint32_t roundtripMs) {};
 
     bool jsonMatches(JsonDocument &json) override {
         return json.containsKey("ack");  //Lots of commands return this, nothing really to do about it
@@ -511,7 +511,7 @@ public:
         satisfaction = _satisfaction;
     }
 
-    void handle(unsigned long roundtripMs) override {}
+    void handle(uint32_t roundtripMs) override {}
 
     bool isSatisfied() override {
         return satisfaction;
@@ -554,6 +554,22 @@ private:
 class PlaylistIndexHandler {
 public:
     virtual void handle(int playlistIndex) {};
+};
+
+//Used internally for tracking regular pings
+class RecordPingReplyHandler : public PingReplyHandler {
+public:
+    explicit RecordPingReplyHandler(uint32_t *lastSuccessful, uint32_t *toUpdate) :
+            lastSuccessful(lastSuccessful), roundtripToUpdate(toUpdate), PingReplyHandler() {}
+
+    void handle(unsigned long roundtripMs) override {
+        *lastSuccessful = millis();
+        *roundtripToUpdate = roundtripMs; //TODO: Smooth this?
+    }
+
+private:
+    uint32_t *lastSuccessful;
+    uint32_t *roundtripToUpdate;
 };
 
 #endif

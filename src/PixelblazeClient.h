@@ -176,6 +176,24 @@ public:
     void checkForInbound();
 
     /**
+     * Get the most recent round-trip time to the pixelblaze. Can be very noisy.
+     *
+     * @return the most recent round-trip milliseconds
+     */
+    uint32_t getMostRecentPingMs() const {
+        return lastPingRoundtripMs;
+    }
+
+    /**
+     * Get the time since a ping sent at clientConfig.sendPingEveryMs intervals received an ack
+     *
+     * @return milliseconds since a response to a ping was received
+     */
+    uint32_t getMsSinceSuccessfulPing() const {
+        return millis() - lastSuccessfulPingAtMs;
+    }
+
+    /**
      * Get a list of all patterns on the device
      *
      * @param replyHandler handler will receive an iterator of the (id, name) pairs of all patterns on the device
@@ -505,7 +523,7 @@ private:
 
     bool sendJson(JsonDocument &doc);
 
-    bool sendBinary(int binType, Stream& stream);
+    bool sendBinary(int binType, Stream &stream);
 
 private:
     WebSocketClient wsClient;
@@ -513,16 +531,9 @@ private:
     PixelblazeUnrequestedHandler unrequestedHandler;
     ClientConfig clientConfig;
 
-    DynamicJsonDocument json;
-
-    uint8_t *byteBuffer;
-    char *textReadBuffer;
-
     ReplyHandler **replyQueue;
     size_t queueFront = 0;
     size_t queueBack = 0;
-
-    int binaryReadType = -1;
 
     SequencerState sequencerState;
     Stats statsEvent;
@@ -530,12 +541,20 @@ private:
     ExpanderConfig expanderConfig;
     Playlist playlist;
     PlaylistUpdate playlistUpdate;
-
-    Control *controls;
-    size_t controlCount = 0;
-
     Peer *peers;
     size_t peerCount = 0;
+
+    uint8_t *byteBuffer;
+    char *textReadBuffer;
+    DynamicJsonDocument json;
+
+    int binaryReadType = -1;
+
+    uint32_t lastPingAtMs = 0;
+    uint32_t lastSuccessfulPingAtMs = 0;
+    uint32_t lastPingRoundtripMs = 0;
+    RecordPingReplyHandler pingReplyHandler =
+            RecordPingReplyHandler(&lastSuccessfulPingAtMs, &lastPingRoundtripMs);
 };
 
 #endif

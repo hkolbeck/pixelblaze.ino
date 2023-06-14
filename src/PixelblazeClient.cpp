@@ -16,7 +16,6 @@ PixelblazeClient::PixelblazeClient(
 
     byteBuffer = new uint8_t[clientConfig.binaryBufferBytes];
     textReadBuffer = new char[clientConfig.textReadBufferBytes];
-    controls = new Control[clientConfig.controlLimit];
     peers = new Peer[clientConfig.peerLimit];
     replyQueue = new ReplyHandler *[clientConfig.replyQueueSize];
     sequencerState.controls = new Control[clientConfig.controlLimit];
@@ -32,7 +31,6 @@ PixelblazeClient::~PixelblazeClient() {
 
     delete[] byteBuffer;
     delete[] textReadBuffer;
-    delete[] controls;
     delete[] peers;
     delete[] replyQueue;
     delete[] playlist.items;
@@ -406,6 +404,12 @@ void PixelblazeClient::checkForInbound() {
         return;
     }
 
+    if (millis() - lastPingAtMs > clientConfig.sendPingEveryMs) {
+        if (ping(pingReplyHandler)) {
+            lastPingAtMs = millis();
+        }
+    }
+
     weedExpiredReplies();
     uint32_t startTime = millis();
 
@@ -495,7 +499,7 @@ bool PixelblazeClient::connectionMaintenance() {
         if (begin()) {
             return true;
         }
-        delay(10);
+        delay(clientConfig.connRepairRetryDelayMs);
     }
 
     return false;
