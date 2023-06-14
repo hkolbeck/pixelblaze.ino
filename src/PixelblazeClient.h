@@ -124,8 +124,7 @@ public:
      * Preview frames can be enabled/disabled by calling sendFramePreviews(bool). It's unclear what the default is.
      * TODO: If the default is to send em, do we flip that?
      * @param previewPixelRGB Packed RGB data, with the first pixel r = preview[0], g = preview[1], b = preview[2]
-     * @param len the length of the preview buffer in bytes. Note that if clientConfig.framePreviewBufferBytes is
-     *            not divisible by three and a frame exceeded that length a partial pixel would be included at the end
+     * @param len the length of the preview buffer in bytes.
      */
     virtual void handlePreviewFrame(uint8_t *previewPixelRGB, size_t len) {};
 
@@ -512,7 +511,6 @@ private:
     DynamicJsonDocument json;
 
     uint8_t *byteBuffer;
-    uint8_t *previewFrameBuffer;
     char *textReadBuffer;
 
     ReplyHandler **replyQueue;

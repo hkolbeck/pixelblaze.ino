@@ -15,7 +15,6 @@ PixelblazeClient::PixelblazeClient(
         json(DynamicJsonDocument(clientConfig.jsonBufferBytes)) {
 
     byteBuffer = new uint8_t[clientConfig.binaryBufferBytes];
-    previewFrameBuffer = new uint8_t[clientConfig.framePreviewBufferBytes];
     textReadBuffer = new char[clientConfig.textReadBufferBytes];
     controls = new Control[clientConfig.controlLimit];
     peers = new Peer[clientConfig.peerLimit];
@@ -32,7 +31,6 @@ PixelblazeClient::~PixelblazeClient() {
     }
 
     delete[] byteBuffer;
-    delete[] previewFrameBuffer;
     delete[] textReadBuffer;
     delete[] controls;
     delete[] peers;
@@ -913,10 +911,9 @@ void PixelblazeClient::handleUnrequestedJson() {
 
 bool PixelblazeClient::handleUnrequestedBinary(int frameType) {
     if (frameType == BIN_TYPE_PREVIEW_FRAME) {
-        //Should always be 300 bytes, but just in case...
-        int frameSize = wsClient.read(previewFrameBuffer,
-                                      min(wsClient.available(), clientConfig.framePreviewBufferBytes));
-        unrequestedHandler.handlePreviewFrame(previewFrameBuffer, frameSize);
+        int frameSize = wsClient.read(byteBuffer,
+                                      min(wsClient.available(), clientConfig.binaryBufferBytes));
+        unrequestedHandler.handlePreviewFrame(byteBuffer, frameSize);
         return true;
     } else if (frameType == BIN_TYPE_EXPANDER_CONFIG) {
         // Expander configs can come in out of order, check if one has been requested
