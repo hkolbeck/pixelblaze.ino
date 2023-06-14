@@ -60,7 +60,7 @@ public:
         File file = rootDir.openNextFile();
         while (file) {
             if (file.isDirectory()) {
-                Serial.print("Unexpected dir in filing area: ");
+                Serial.print(F("Unexpected dir in filing area: "));
                 Serial.print(root);
                 Serial.println(file.name());
             } else if (isTrash(file)) {
