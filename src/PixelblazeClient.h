@@ -199,7 +199,7 @@ public:
      * @param replyHandler handler will receive an iterator of the (id, name) pairs of all patterns on the device
      * @return true if the request was dispatched, false otherwise
      */
-    bool getPatterns(AllPatternsReplyHandler &replyHandler);
+    bool getPatterns(void (*handler)(AllPatternIterator &));
 
     /**
      * Get the contents of a playlist, along with some metadata about it and its current state
@@ -208,7 +208,7 @@ public:
      * @param playlistName The playlist to fetch, presently only the default is supported
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPlaylist(PlaylistReplyHandler &replyHandler, String &playlistName = defaultPlaylist);
+    bool getPlaylist(void (*handler)(Playlist &), String &playlistName = defaultPlaylist);
 
     /**
      * Get the index on the playlist of the current pattern
@@ -216,7 +216,7 @@ public:
      * @param replyHandler handler will receive an int indicating the 0-based index
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPlaylistIndex(PlaylistIndexHandler &replyHandler);
+//    bool getPlaylistIndex(PlaylistIndexHandler &replyHandler);
 
     /**
      * Set the current pattern by its index on the active playlist
@@ -239,7 +239,7 @@ public:
      *
      * @return true if the request was dispatched, false otherwise.
      */
-    bool prevPattern();
+//    bool prevPattern();
 
     /**
      * Set the sequencer state to "play"
@@ -271,7 +271,7 @@ public:
      *
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPeers(PeersReplyHandler &replyHandler);
+    bool getPeers(void (*handler)(Peer *, size_t));
 
     /**
      * Set the active brightness
@@ -311,7 +311,7 @@ public:
      * @param replyHandler Handler that will receive an array of Controls and the patternId they're for
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getCurrentPatternControls(PatternControlReplyHandler &replyHandler);
+//    bool getCurrentPatternControls(void (*handler)());
 
     /**
      * Get controls for a specific pattern
@@ -320,7 +320,7 @@ public:
      * @param replyHandler the handler that will receive those controls
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPatternControls(String &patternId, PatternControlReplyHandler &replyHandler);
+    bool getPatternControls(String &patternId, void (*handler)(String &, Control *, size_t));
 
     /**
      * Gets a preview image for a specified pattern. The returned stream is a 100px wide by 150px tall 8-bit JPEG image.
@@ -330,7 +330,7 @@ public:
      * @param replyHandler handler to ingest the image stream
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPreviewImage(String &patternId, PreviewImageReplyHandler &replyHandler);
+    bool getPreviewImage(String &patternId, void (*handlerFn)(String &, CloseableStream *), bool clean = true);
 
     /**
      * Set the global brightness limit
@@ -383,8 +383,9 @@ public:
      * @return true if the request was dispatched, false otherwise.
      */
     bool getSystemState(
-            SettingsReplyHandler &settingsHandler, SequencerReplyHandler &seqHandler,
-            ExpanderConfigReplyHandler &expanderHandler,
+            void (*settingsHandler)(Settings &),
+            void (*seqHandler)(SequencerState &),
+            void (*expanderHandler)(ExpanderConfig &),
             int watchResponses = WATCH_SETTING_REQ | WATCH_SEQ_REQ);
 
     /**
@@ -393,7 +394,7 @@ public:
      * @param settingsHandler handler for the non-ignored response
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getSettings(SettingsReplyHandler &settingsHandler);
+    bool getSettings(void (*settingsHandler)(Settings &));
 
     /**
      * Utility wrapper around getSystemState()
@@ -401,7 +402,7 @@ public:
      * @param seqHandler handler for the non-ignored response
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getSequencerState(SequencerReplyHandler &seqHandler);
+    bool getSequencerState(void (*seqHandler)(SequencerState &));
 
     /**
      * Utility wrapper around getSystemState()
@@ -409,7 +410,7 @@ public:
      * @param expanderHandler handler for the non-ignored response
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getExpanderConfig(ExpanderConfigReplyHandler &expanderHandler);
+    bool getExpanderConfig(void (*expanderHandler)(ExpanderConfig &));
 
     /**
      * Send a ping to the controller
@@ -420,7 +421,7 @@ public:
      * @param replyHandler handler will receive the approximate round trip time
      * @return true if the request was dispatched, false otherwise.
      */
-    bool ping(PingReplyHandler &replyHandler);
+    bool ping(void (*handler)(uint32_t));
 
     /**
      * Specify whether the controller should send a preview of each render cycle. If sent they're handled in the
@@ -525,6 +526,12 @@ private:
 
     bool sendBinary(int binType, Stream &stream);
 
+    static void noopSettings(Settings &s) {};
+
+    static void noopSequencer(SequencerState &s) {};
+
+    static void noopExpander(ExpanderConfig &e) {};
+
 private:
     WebSocketClient wsClient;
     PixelblazeBuffer &binaryBuffer;
@@ -553,8 +560,6 @@ private:
     uint32_t lastPingAtMs = 0;
     uint32_t lastSuccessfulPingAtMs = 0;
     uint32_t lastPingRoundtripMs = 0;
-    RecordPingReplyHandler pingReplyHandler =
-            RecordPingReplyHandler(&lastSuccessfulPingAtMs, &lastPingRoundtripMs);
 };
 
 #endif
