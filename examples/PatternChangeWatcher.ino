@@ -17,6 +17,21 @@
 #define WEBSOCKET_PORT 81
 
 /**
+ * This is a definition of behavior to take when a pattern change is detected
+ */
+class PatternChangeWatcher : public PixelblazeUnrequestedHandler {
+public:
+    PatternChangeWatcher() : PixelblazeUnrequestedHandler() {}
+
+    void handlePatternChange(SequencerState &patternChange) override {
+        Serial.print(F("Pattern change detected. New pattern: "));
+        Serial.print(patternChange.name);
+        Serial.print(F(" ID: "));
+        Serial.println(patternChange.activeProgramId);
+    }
+};
+
+/**
  * This should connect to a Pixelblaze controller and then smoothly scale the brightness up and down forever
  */
 WiFiClient wifi;
@@ -47,30 +62,13 @@ void setup() {
 
     //Pixelblaze sends several message types unprompted, some of them ~100/s unless they're shut off. We're using a
     //No-op implementation here, but it can be extended and handlers defined for any or all unprompted message types.
-    PixelblazeUnrequestedHandler unrequestedHandler = PixelblazeUnrequestedHandler();
+    PatternChangeWatcher unrequestedHandler = PatternChangeWatcher();
 
     pbClient = new PixelblazeClient(wsClient, buffer, unrequestedHandler);
     pbClient->begin();
 }
 
-int brightness = 50;
-int delta = 1;
 void loop() {
-    //We're discarding everything coming in, but still better to trim it as it comes in
-    //This is also where we do some maintenance on the connection if there are issues
     pbClient->checkForInbound();
-
-    brightness += delta;
-    if (brightness > 100) {
-        brightness = 99;
-        delta = -1;
-    } else if (brightness < 0) {
-        brightness = 1;
-        delta = 1;
-    } else {
-        brightness += delta;
-    }
-
-    pbClient->setBrightnessLimit(brightness, false);
     delay(100);
 }
