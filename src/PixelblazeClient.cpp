@@ -228,7 +228,6 @@ bool PixelblazeClient::getSystemState(
     return sendJson(json);
 }
 
-
 bool PixelblazeClient::getSettings(void (*settingsHandler)(Settings &)) {
     return getSystemState(settingsHandler, noopSequencer, noopExpander, WATCH_SETTING_REQ);
 }

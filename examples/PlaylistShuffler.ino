@@ -54,11 +54,12 @@ void setup() {
     Serial.println("Wifi connected!");
 
     PixelblazeMemBuffer buffer = PixelblazeMemBuffer();
-    PlaylistChangeWatcher unrequestedHandler = PlaylistChangeWatcher();
-    pbClient = new PixelblazeClient(wsClient, buffer, unrequestedHandler);
+    PlaylistChangeWatcher watcher = PlaylistChangeWatcher();
+    pbClient = new PixelblazeClient(wsClient, buffer, watcher);
     pbClient->begin();
 
     pbClient->getPlaylist(extractPlaylistLen);
+
 }
 
 uint32_t lastShuffle = millis();
