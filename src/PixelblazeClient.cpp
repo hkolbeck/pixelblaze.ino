@@ -61,8 +61,7 @@ bool PixelblazeClient::getPatterns(AllPatternsReplyHandler &replyHandler) {
 
     json.clear();
     json["listPrograms"] = true;
-    sendJson(json);
-    return true;
+    return sendJson(json);
 }
 
 bool PixelblazeClient::getPlaylist(PlaylistReplyHandler &replyHandler, String &playlistName) {
@@ -77,8 +76,7 @@ bool PixelblazeClient::getPlaylist(PlaylistReplyHandler &replyHandler, String &p
 
     json.clear();
     json["getPlaylist"] = playlistName;
-    sendJson(json);
-    return true;
+    return sendJson(json);
 }
 
 class PlaylistIndexExtractor : public PlaylistReplyHandler {
@@ -173,8 +171,7 @@ bool PixelblazeClient::getPeers(PeersReplyHandler &replyHandler) {
 
     json.clear();
     json["getPeers"] = 1;
-    sendJson(json);
-    return true;
+    return sendJson(json);
 }
 
 bool PixelblazeClient::setCurrentPatternControls(Control *controls, int numControls, bool saveToFlash) {
