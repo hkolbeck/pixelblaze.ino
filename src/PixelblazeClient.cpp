@@ -45,9 +45,9 @@ bool PixelblazeClient::connected() {
     return wsClient.connected();
 }
 
-bool PixelblazeClient::getPatterns(void (*handler)(AllPatternIterator &)) {
+bool PixelblazeClient::getPatterns(void (*handler)(AllPatternIterator &), void (*onError)(int)) {
     String bufferId = String(random());
-    auto *myHandler = new AllPatternsReplyHandler(handler, bufferId);
+    auto *myHandler = new AllPatternsReplyHandler(handler, bufferId, true, onError);
     if (!enqueueReply(myHandler)) {
         delete myHandler;
         return false;
@@ -58,8 +58,8 @@ bool PixelblazeClient::getPatterns(void (*handler)(AllPatternIterator &)) {
     return sendJson(json);
 }
 
-bool PixelblazeClient::getPlaylist(void (*handler)(Playlist &), String &playlistName) {
-    auto *myHandler = new PlaylistReplyHandler(handler);
+bool PixelblazeClient::getPlaylist(void (*handler)(Playlist &), String &playlistName, void (*onError)(int)) {
+    auto *myHandler = new PlaylistReplyHandler(handler, onError);
     if (!enqueueReply(myHandler)) {
         delete myHandler;
         return false;
@@ -110,8 +110,8 @@ bool PixelblazeClient::setSequencerMode(int sequencerMode) {
     return sendJson(json);
 }
 
-bool PixelblazeClient::getPeers(void (*handler)(Peer*, size_t)) {
-    auto *myHandler = new PeersReplyHandler(handler);
+bool PixelblazeClient::getPeers(void (*handler)(Peer*, size_t), void (*onError)(int)) {
+    auto *myHandler = new PeersReplyHandler(handler, onError);
     if (!enqueueReply(myHandler)) {
         delete myHandler;
         return false;
@@ -148,8 +148,8 @@ bool PixelblazeClient::setBrightness(float brightness, bool saveToFlash) {
     return sendJson(json);
 }
 
-bool PixelblazeClient::getPatternControls(String &patternId, void (*handler)(String &, Control*, size_t)) {
-    auto *myHandler = new PatternControlReplyHandler(handler);
+bool PixelblazeClient::getPatternControls(String &patternId, void (*handler)(String &, Control*, size_t), void (*onError)(int)) {
+    auto *myHandler = new PatternControlReplyHandler(handler, onError);
 
     if (!enqueueReply(myHandler)) {
         delete myHandler;
@@ -168,8 +168,8 @@ bool PixelblazeClient::getPatternControls(String &patternId, void (*handler)(Str
 //    return getSystemState(noopSettingsHandler, extractor, noopExpanderConfig, WATCH_SEQ_REQ);
 //}
 
-bool PixelblazeClient::getPreviewImage(String &patternId, void (*handler)(String&, CloseableStream*), bool clean) {
-    auto *myHandler = new PreviewImageReplyHandler(patternId, handler, clean);
+bool PixelblazeClient::getPreviewImage(String &patternId, void (*handler)(String&, CloseableStream*), bool clean, void (*onError)(int)) {
+    auto *myHandler = new PreviewImageReplyHandler(patternId, handler, clean, onError);
     if (!enqueueReply(myHandler)) {
         delete myHandler;
         return false;
@@ -198,20 +198,21 @@ bool PixelblazeClient::getSystemState(
         void (*settingsHandler)(Settings &),
         void (*seqHandler)(SequencerState &),
         void (*expanderHandler)(ExpanderConfig &),
-        int watchResponses) {
+        int watchResponses,
+        void (*onError)(int)) {
 
-    auto mySettingsHandler = new SettingsReplyHandler(settingsHandler);
+    auto mySettingsHandler = new SettingsReplyHandler(settingsHandler, onError);
     if (!(watchResponses & WATCH_SETTING_REQ)) {
         mySettingsHandler->satisfied = true;
     }
 
-    auto *mySeqHandler = new SequencerReplyHandler(seqHandler);
+    auto *mySeqHandler = new SequencerReplyHandler(seqHandler, onError);
     if (!(watchResponses & WATCH_SEQ_REQ)) {
         mySeqHandler->satisfied = true;
     }
 
     String bufferId = String(random());
-    auto *myExpanderHandler = new ExpanderConfigReplyHandler(expanderHandler, bufferId);
+    auto *myExpanderHandler = new ExpanderConfigReplyHandler(expanderHandler, bufferId, true, onError);
     if (!(watchResponses & WATCH_EXPANDER_REQ)) {
         myExpanderHandler->satisfied = true;
     }
@@ -228,20 +229,20 @@ bool PixelblazeClient::getSystemState(
     return sendJson(json);
 }
 
-bool PixelblazeClient::getSettings(void (*settingsHandler)(Settings &)) {
-    return getSystemState(settingsHandler, noopSequencer, noopExpander, WATCH_SETTING_REQ);
+bool PixelblazeClient::getSettings(void (*settingsHandler)(Settings &), void (*onError)(int)) {
+    return getSystemState(settingsHandler, noopSequencer, noopExpander, WATCH_SETTING_REQ, onError);
 }
 
-bool PixelblazeClient::getSequencerState(void (*seqHandler)(SequencerState &)) {
-    return getSystemState(noopSettings, seqHandler, noopExpander, WATCH_SEQ_REQ);
+bool PixelblazeClient::getSequencerState(void (*seqHandler)(SequencerState &), void (*onError)(int)) {
+    return getSystemState(noopSettings, seqHandler, noopExpander, WATCH_SEQ_REQ, onError);
 }
 
-bool PixelblazeClient::getExpanderConfig(void (*expanderHandler)(ExpanderConfig &)) {
-    return getSystemState(noopSettings, noopSequencer, expanderHandler, WATCH_EXPANDER_REQ);
+bool PixelblazeClient::getExpanderConfig(void (*expanderHandler)(ExpanderConfig &), void (*onError)(int)) {
+    return getSystemState(noopSettings, noopSequencer, expanderHandler, WATCH_EXPANDER_REQ, onError);
 }
 
-bool PixelblazeClient::ping(void (*handler)(uint32_t)) {
-    auto *myHandler = new PingReplyHandler(handler);
+bool PixelblazeClient::ping(void (*handler)(uint32_t), void (*onError)(int)) {
+    auto *myHandler = new PingReplyHandler(handler, onError);
     if (!enqueueReply(myHandler)) {
         delete myHandler;
         return false;

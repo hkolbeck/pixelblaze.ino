@@ -158,17 +158,10 @@ private:
     bool clean;
 };
 
-/* 
- * ==========================================================================================================================
- * = The rest are user-facing. Users will interact by extending the appropriate handler class and passing it to the client. =
- * = For each handler type a no-op version is provided for instances where only the request side effect is interesting.     =
- * ==========================================================================================================================
-*/
-
-/*
- Edge case handler for allowing interaction with arbitrary binary commands if they're unimplemented. The stream provided to 
- handle() is closed after it returns. 
-*/
+/**
+ * Edge case handler for allowing interaction with arbitrary binary-fetching commands if they're unimplemented.
+ * The stream provided to handle() is closed after it returns.
+ */
 #define HANDLER_RAW_BINARY 1
 
 class RawBinaryHandler : public BinaryReplyHandler {
@@ -181,27 +174,10 @@ public:
     virtual void handle(CloseableStream *stream) {};
 };
 
-class NoopRawBinaryHandler : public RawBinaryHandler {
-public:
-    explicit NoopRawBinaryHandler(int binType, bool clean = true, bool _satisfaction = true)
-            : RawBinaryHandler(GARBAGE, binType, clean) {
-        satisfaction = _satisfaction;
-    }
-
-    void handle(CloseableStream *stream) override {}
-
-    bool isSatisfied() override {
-        return satisfaction;
-    }
-
-private:
-    bool satisfaction;
-};
-
-/*
- Edge case handler for allowing interaction with arbitrary JSON commands if they're unimplemented. Note that any data extracted
- in handle() must be copied, as it may be overwritten after handle() returns
-*/
+/**
+ * Edge case handler for allowing interaction with arbitrary JSON commands if they're unimplemented. Note that any data extracted
+ * in handle() must be copied, as it may be overwritten after handle() returns
+ */
 #define HANDLER_RAW_TEXT 2
 
 class RawTextHandler : public TextReplyHandler {
@@ -213,26 +189,6 @@ public:
 
     virtual void handle(JsonDocument &json) {};
     //Implementations must also include 'bool jsonMatches(json)';
-};
-
-class NoopRawTextHandler : public RawTextHandler {
-public:
-    explicit NoopRawTextHandler(bool _satisfaction = true) : RawTextHandler() {
-        satisfaction = _satisfaction;
-    }
-
-    void handle(JsonDocument &json) override {}
-
-    bool jsonMatches(JsonDocument &json) override {
-        return false;
-    }
-
-    bool isSatisfied() override {
-        return satisfaction;
-    }
-
-private:
-    bool satisfaction;
 };
 
 struct PatternIdentifiers {
@@ -262,8 +218,9 @@ private:
 
 class AllPatternsReplyHandler : public BinaryReplyHandler {
 public:
-    explicit AllPatternsReplyHandler(void (*handleFn)(AllPatternIterator &), String &bufferId, bool clean = true)
-            : handleFn(handleFn),
+    explicit AllPatternsReplyHandler(void (*handleFn)(AllPatternIterator &), String &bufferId, bool clean,
+                                     void (*onError)(int))
+            : handleFn(handleFn), onError(onError),
               BinaryReplyHandler(HANDLER_ALL_PATTERNS, bufferId, BIN_TYPE_GET_PROGRAM_LIST, clean) {};
 
     ~AllPatternsReplyHandler() override = default;
@@ -271,16 +228,23 @@ public:
     void handle(AllPatternIterator &iterator) {
         handleFn(iterator);
     };
+
+    void replyFailed(int cause) override {
+        onError(cause);
+    }
+
 private:
     void (*handleFn)(AllPatternIterator &);
+
+    void (*onError)(int);
 };
 
 #define HANDLER_PLAYLIST 4
 
 class PlaylistReplyHandler : public TextReplyHandler {
 public:
-    explicit PlaylistReplyHandler(void (*handlerFn)(Playlist &))
-            : handlerFn(handlerFn), TextReplyHandler(HANDLER_PLAYLIST) {};
+    explicit PlaylistReplyHandler(void (*handlerFn)(Playlist &), void (*onError)(int))
+            : handlerFn(handlerFn), onError(onError), TextReplyHandler(HANDLER_PLAYLIST) {};
 
     ~PlaylistReplyHandler() override = default;
 
@@ -288,20 +252,26 @@ public:
         handlerFn(playlist);
     };
 
+    void replyFailed(int cause) override {
+        onError(cause);
+    }
+
     bool jsonMatches(JsonDocument &json) override {
         return json.containsKey("playlist") && json["playlist"].containsKey("position");
     }
 
 private:
     void (*handlerFn)(Playlist &);
+
+    void (*onError)(int);
 };
 
 #define HANDLER_PEERS 5
 
 class PeersReplyHandler : public TextReplyHandler {
 public:
-    PeersReplyHandler(void (*handlerFn)(Peer *, size_t))
-            : handlerFn(handlerFn), TextReplyHandler(HANDLER_PEERS) {};
+    PeersReplyHandler(void (*handlerFn)(Peer *, size_t), void (*onError)(int))
+            : handlerFn(handlerFn), onError(onError), TextReplyHandler(HANDLER_PEERS) {};
 
     ~PeersReplyHandler() override = default;
 
@@ -309,36 +279,51 @@ public:
         handlerFn(peers, numPeers);
     };
 
+    void replyFailed(int cause) override {
+        onError(cause);
+    }
+
     bool jsonMatches(JsonDocument &json) override {
         return json.containsKey("peers");
     }
 
 private:
     void (*handlerFn)(Peer *, size_t);
+
+    void (*onError)(int);
 };
 
 #define HANDLER_PREVIEW_IMG 6
 
 class PreviewImageReplyHandler : public BinaryReplyHandler {
 public:
-    explicit PreviewImageReplyHandler(String &patternId, void (*handlerFn)(String&, CloseableStream *), bool clean = true)
-            : handlerFn(handlerFn), BinaryReplyHandler(HANDLER_PREVIEW_IMG, patternId, BIN_TYPE_PREVIEW_IMAGE, clean) {};
+    explicit PreviewImageReplyHandler(String &patternId, void (*handlerFn)(String &, CloseableStream *), bool clean,
+                                      void (*onError)(int))
+            : handlerFn(handlerFn), onError(onError),
+              BinaryReplyHandler(HANDLER_PREVIEW_IMG, patternId, BIN_TYPE_PREVIEW_IMAGE, clean) {};
 
     ~PreviewImageReplyHandler() override = default;
 
     void handle(String &patternId, CloseableStream *stream) {
         handlerFn(patternId, stream);
     };
+
+    void replyFailed(int cause) override {
+        onError(cause);
+    }
+
 private:
-    void (*handlerFn)(String&, CloseableStream *);
+    void (*handlerFn)(String &, CloseableStream *);
+
+    void (*onError)(int);
 };
 
 #define HANDLER_SETTINGS 7
 
 class SettingsReplyHandler : public TextReplyHandler {
 public:
-    SettingsReplyHandler(void (*handlerFn)(Settings &))
-            : handlerFn(handlerFn), TextReplyHandler(HANDLER_SETTINGS) {};
+    SettingsReplyHandler(void (*handlerFn)(Settings &), void (*onError)(int))
+            : handlerFn(handlerFn), onError(onError), TextReplyHandler(HANDLER_SETTINGS) {};
 
     ~SettingsReplyHandler() override = default;
 
@@ -350,16 +335,22 @@ public:
         return json.containsKey("pixelCount");
     }
 
+    void replyFailed(int cause) override {
+        onError(cause);
+    }
+
 private:
     void (*handlerFn)(Settings &);
+
+    void (*onError)(int);
 };
 
 #define HANDLER_SEQ 8
 
 class SequencerReplyHandler : public TextReplyHandler {
 public:
-    SequencerReplyHandler(void (*handlerFn)(SequencerState &))
-            : handlerFn(handlerFn), TextReplyHandler(HANDLER_SEQ) {};
+    SequencerReplyHandler(void (*handlerFn)(SequencerState &), void (*onError)(int))
+            : handlerFn(handlerFn), onError(onError), TextReplyHandler(HANDLER_SEQ) {};
 
     ~SequencerReplyHandler() override = default;
 
@@ -371,16 +362,23 @@ public:
         return json.containsKey("activeProgram");
     }
 
+    void replyFailed(int cause) override {
+        onError(cause);
+    }
+
 private:
     void (*handlerFn)(SequencerState &);
+
+    void (*onError)(int);
 };
 
 #define HANDLER_EXPANDER_CONF 9
 
 class ExpanderConfigReplyHandler : public BinaryReplyHandler {
 public:
-    explicit ExpanderConfigReplyHandler(void (*handlerFn)(ExpanderConfig &), String bufferId, bool clean = true)
-            : handlerFn(handlerFn),
+    explicit ExpanderConfigReplyHandler(void (*handlerFn)(ExpanderConfig &), String bufferId, bool clean,
+                                        void (*onError)(int))
+            : handlerFn(handlerFn), onError(onError),
               BinaryReplyHandler(HANDLER_EXPANDER_CONF, bufferId, BIN_TYPE_EXPANDER_CONFIG, clean) {};
 
     ~ExpanderConfigReplyHandler() override = default;
@@ -389,8 +387,14 @@ public:
         handlerFn(expanderConfig);
     };
 
+    void replyFailed(int cause) override {
+        onError(cause);
+    }
+
 private:
     void (*handlerFn)(ExpanderConfig &);
+
+    void (*onError)(int);
 };
 
 /**
@@ -404,8 +408,8 @@ private:
 
 class PingReplyHandler : public TextReplyHandler {
 public:
-    explicit PingReplyHandler(void (*handlerFn)(uint32_t))
-            : handlerFn(handlerFn), TextReplyHandler(HANDLER_PING) {};
+    explicit PingReplyHandler(void (*handlerFn)(uint32_t), void (*onError)(int))
+            : handlerFn(handlerFn), onError(onError), TextReplyHandler(HANDLER_PING) {};
 
     ~PingReplyHandler() override = default;
 
@@ -417,16 +421,22 @@ public:
         return json.containsKey("ack");  //Lots of commands return this, nothing really to do about it
     }
 
+    void replyFailed(int cause) override {
+        onError(cause);
+    }
+
 private:
     void (*handlerFn)(uint32_t);
+
+    void (*onError)(int);
 };
 
 #define HANDLER_PATTERN_CONTROLS 11
 
 class PatternControlReplyHandler : public TextReplyHandler {
 public:
-    PatternControlReplyHandler(void (*handlerFn)(String &, Control *, size_t))
-            : handlerFn(handlerFn), TextReplyHandler(HANDLER_PATTERN_CONTROLS) {};
+    PatternControlReplyHandler(void (*handlerFn)(String &, Control *, size_t), void (*onError)(int))
+            : handlerFn(handlerFn), onError(onError), TextReplyHandler(HANDLER_PATTERN_CONTROLS) {};
 
     ~PatternControlReplyHandler() override = default;
 
@@ -434,14 +444,14 @@ public:
         handlerFn(patternId, controls, numControls);
     };
 
+    void replyFailed(int cause) override {
+        onError(cause);
+    }
+
 private:
     void (*handlerFn)(String &, Control *, size_t);
-};
 
-// Not actually used like other handlers, just internally
-class PlaylistIndexHandler {
-public:
-    virtual void handle(int playlistIndex) {};
+    void (*onError)(int);
 };
 
 #endif

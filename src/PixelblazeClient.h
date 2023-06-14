@@ -199,7 +199,7 @@ public:
      * @param replyHandler handler will receive an iterator of the (id, name) pairs of all patterns on the device
      * @return true if the request was dispatched, false otherwise
      */
-    bool getPatterns(void (*handler)(AllPatternIterator &));
+    bool getPatterns(void (*handler)(AllPatternIterator &), void (*onError)(int) = ignoreError);
 
     /**
      * Get the contents of a playlist, along with some metadata about it and its current state
@@ -208,7 +208,7 @@ public:
      * @param playlistName The playlist to fetch, presently only the default is supported
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPlaylist(void (*handler)(Playlist &), String &playlistName = defaultPlaylist);
+    bool getPlaylist(void (*handler)(Playlist &), String &playlistName = defaultPlaylist, void (*onError)(int) = ignoreError);
 
     /**
      * Get the index on the playlist of the current pattern
@@ -271,7 +271,7 @@ public:
      *
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPeers(void (*handler)(Peer *, size_t));
+    bool getPeers(void (*handler)(Peer *, size_t), void (*onError)(int) = ignoreError);
 
     /**
      * Set the active brightness
@@ -320,7 +320,7 @@ public:
      * @param replyHandler the handler that will receive those controls
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPatternControls(String &patternId, void (*handler)(String &, Control *, size_t));
+    bool getPatternControls(String &patternId, void (*handler)(String &, Control *, size_t), void (*onError)(int) = ignoreError);
 
     /**
      * Gets a preview image for a specified pattern. The returned stream is a 100px wide by 150px tall 8-bit JPEG image.
@@ -330,7 +330,7 @@ public:
      * @param replyHandler handler to ingest the image stream
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPreviewImage(String &patternId, void (*handlerFn)(String &, CloseableStream *), bool clean = true);
+    bool getPreviewImage(String &patternId, void (*handlerFn)(String &, CloseableStream *), bool clean = true, void (*onError)(int) = ignoreError);
 
     /**
      * Set the global brightness limit
@@ -386,7 +386,8 @@ public:
             void (*settingsHandler)(Settings &),
             void (*seqHandler)(SequencerState &),
             void (*expanderHandler)(ExpanderConfig &),
-            int watchResponses = WATCH_SETTING_REQ | WATCH_SEQ_REQ);
+            int watchResponses = WATCH_SETTING_REQ | WATCH_SEQ_REQ,
+            void (*onError)(int) = ignoreError);
 
     /**
      * Utility wrapper around getSystemState()
@@ -394,7 +395,7 @@ public:
      * @param settingsHandler handler for the non-ignored response
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getSettings(void (*settingsHandler)(Settings &));
+    bool getSettings(void (*settingsHandler)(Settings &), void (*onError)(int) = ignoreError);
 
     /**
      * Utility wrapper around getSystemState()
@@ -402,7 +403,7 @@ public:
      * @param seqHandler handler for the non-ignored response
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getSequencerState(void (*seqHandler)(SequencerState &));
+    bool getSequencerState(void (*seqHandler)(SequencerState &), void (*onError)(int) = ignoreError);
 
     /**
      * Utility wrapper around getSystemState()
@@ -410,7 +411,7 @@ public:
      * @param expanderHandler handler for the non-ignored response
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getExpanderConfig(void (*expanderHandler)(ExpanderConfig &));
+    bool getExpanderConfig(void (*expanderHandler)(ExpanderConfig &), void (*onError)(int) = ignoreError);
 
     /**
      * Send a ping to the controller
@@ -421,7 +422,7 @@ public:
      * @param replyHandler handler will receive the approximate round trip time
      * @return true if the request was dispatched, false otherwise.
      */
-    bool ping(void (*handler)(uint32_t));
+    bool ping(void (*handler)(uint32_t), void (*onError)(int) = ignoreError);
 
     /**
      * Specify whether the controller should send a preview of each render cycle. If sent they're handled in the
@@ -473,6 +474,15 @@ public:
      * @return true if the request was dispatched, false otherwise.
      */
     bool rawRequest(RawTextHandler &replyHandler, int binType, Stream &request);
+
+    /**
+     * Default handler for reply error reporting. Error codes are represented by the FAILURE_
+     * #defines in PixelblazeHandlers.h
+     *
+     * @param errorCode A code indicating rough failure reasons
+     */
+    static void ignoreError(int ignored) {
+    }
 
     /**
      * Utility function for transforming a CamelCase variable name to human readable.
