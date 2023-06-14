@@ -415,7 +415,7 @@ void PixelblazeClient::checkForInbound() {
             if (format == FORMAT_TEXT) {
                 DeserializationError deErr = deserializeJson(json, wsClient.readString());
                 if (deErr) {
-                    Serial.print("Message deserialization error: ");
+                    Serial.print(F("Message deserialization error: "));
                     Serial.println(deErr.f_str());
                 } else {
                     handleUnrequestedJson();
@@ -423,7 +423,7 @@ void PixelblazeClient::checkForInbound() {
             } else if (format == FORMAT_BINARY && wsClient.available() > 0) {
                 handleUnrequestedBinary(wsClient.read());
             } else {
-                Serial.print("Unexpected reply format: ");
+                Serial.print(F("Unexpected reply format: "));
                 Serial.println(format);
             }
         } else {
@@ -449,7 +449,7 @@ void PixelblazeClient::checkForInbound() {
             }
 
             if (soughtFormat != FORMAT_TEXT && soughtFormat != FORMAT_BINARY) {
-                Serial.print("Unexpected sought format: ");
+                Serial.print(F("Unexpected sought format: "));
                 Serial.println(soughtFormat);
                 replyQueue[queueFront]->replyFailed(FAILED_MALFORMED_HANDLER);
                 dequeueReply();
@@ -466,7 +466,7 @@ void PixelblazeClient::checkForInbound() {
                     seekingBinaryHasBinary();
                 }
             } else {
-                Serial.print("Dropping message with unexpected reply format: ");
+                Serial.print(F("Dropping message with unexpected reply format: "));
                 Serial.println(format);
             }
         }
@@ -505,7 +505,7 @@ void PixelblazeClient::weedExpiredReplies() {
 void PixelblazeClient::seekingTextHasText() {
     DeserializationError deErr = deserializeJson(json, wsClient.readString());
     if (deErr) {
-        Serial.print("Message deserialization error: ");
+        Serial.print(F("Message deserialization error: "));
         Serial.println(deErr.f_str());
     } else {
         if (replyQueue[queueFront]->jsonMatches(json)) {
@@ -525,7 +525,7 @@ void PixelblazeClient::seekingBinaryHasBinary() {
     auto *binaryHandler = (BinaryReplyHandler *) replyQueue[queueFront];
     int frameType = wsClient.read();
     if (frameType < 0) {
-        Serial.println("Empty binary body received");
+        Serial.println(F("Empty binary body received"));
     } else if (binaryReadType < 0) {
         //We've read nothing so far, blank slate
         if (frameType == binaryHandler->binType) {
@@ -548,9 +548,9 @@ void PixelblazeClient::seekingBinaryHasBinary() {
                 binaryReadType = frameType;
             } else {
                 //Frame was middle, last, or 0, none of which should happen. Drop it and keep going
-                Serial.print("Got unexpected frameFlag: ");
+                Serial.print(F("Got unexpected frameFlag: "));
                 Serial.print(frameFlag);
-                Serial.print("For frameType: ");
+                Serial.print(F("For frameType: "));
                 Serial.println(frameType);
             }
         } else {
@@ -576,17 +576,17 @@ void PixelblazeClient::seekingBinaryHasBinary() {
             }
         } else {
             //Frame was first or 0, neither of which should happen
-            Serial.print("Got unexpected frameFlag: ");
+            Serial.print(F("Got unexpected frameFlag: "));
             Serial.print(frameFlag);
-            Serial.print("For frameType: ");
+            Serial.print(F("For frameType: "));
             Serial.println(frameType);
         }
     } else {
         //We're mid read and just got an incompatible frame
         if (!handleUnrequestedBinary(frameType)) {
-            Serial.print("Expected frameType: ");
+            Serial.print(F("Expected frameType: "));
             Serial.print(binaryReadType);
-            Serial.print(" but got: ");
+            Serial.print(F(" but got: "));
             Serial.println(frameType);
 
             //Scrap the current read, if the finisher never comes it would drop requested events until weeded
@@ -601,7 +601,7 @@ void PixelblazeClient::seekingBinaryHasBinary() {
 void PixelblazeClient::seekingBinaryHasText() {
     DeserializationError deErr = deserializeJson(json, wsClient.readString());
     if (deErr) {
-        Serial.print("Message deserialization error: ");
+        Serial.print(F("Message deserialization error: "));
         Serial.println(deErr.f_str());
     } else {
         handleUnrequestedJson();
@@ -611,13 +611,13 @@ void PixelblazeClient::seekingBinaryHasText() {
 bool PixelblazeClient::readBinaryToStream(ReplyHandler *handler, String &bufferId, bool append) {
     CloseableStream *stream = binaryBuffer.makeWriteStream(bufferId, append);
     if (!stream) {
-        Serial.println("Couldn't open write stream, attempting to garbage collect");
+        Serial.println(F("Couldn't open write stream, attempting to garbage collect"));
         binaryBuffer.garbageCollect();
         stream = binaryBuffer.makeWriteStream(bufferId, append);
     }
 
     if (!stream) {
-        Serial.print("Failed to get write stream for: ");
+        Serial.print(F("Failed to get write stream for: "));
         Serial.println(bufferId);
         handler->replyFailed(FAILED_BUFFER_ALLOC_FAIL);
         return false;
@@ -628,7 +628,7 @@ bool PixelblazeClient::readBinaryToStream(ReplyHandler *handler, String &bufferI
         int bytesRead = wsClient.read(byteBuffer, min(clientConfig.binaryBufferBytes, available));
         size_t written = stream->write(byteBuffer, bytesRead);
         if (bytesRead != written) {
-            Serial.print("Partial write on stream for bufferId: ");
+            Serial.print(F("Partial write on stream for bufferId: "));
             Serial.println(bufferId);
             handler->replyFailed(FAILED_STREAM_WRITE_FAILURE);
             return false;
@@ -671,7 +671,7 @@ void PixelblazeClient::dispatchTextReply(ReplyHandler *genHandler) {
                 playlist.items[itemIdx].durationMs = itemObj["ms"];
                 itemIdx++;
                 if (itemIdx >= clientConfig.playlistLimit) {
-                    Serial.print("Got too many patterns on playlist to store: ");
+                    Serial.print(F("Got too many patterns on playlist to store: "));
                     Serial.print(items.size());
                     break;
                 }
@@ -738,7 +738,7 @@ void PixelblazeClient::dispatchTextReply(ReplyHandler *genHandler) {
             break;
         }
         default: {
-            Serial.print("Got unexpected text reply type: ");
+            Serial.print(F("Got unexpected text reply type: "));
             Serial.println(handler->replyType);
         }
 
@@ -757,7 +757,7 @@ void PixelblazeClient::parseSequencerState() {
         sequencerState.controls[controlIdx].value = kv.value();
         controlIdx++;
         if (controlIdx >= clientConfig.controlLimit) {
-            Serial.print("Got more controls than could be saved: ");
+            Serial.print(F("Got more controls than could be saved: "));
             Serial.println(controlsObj.size());
             break;
         }
@@ -786,7 +786,7 @@ void PixelblazeClient::dispatchBinaryReply(ReplyHandler *handler) {
 
     auto stream = binaryBuffer.makeReadStream(binHandler->bufferId);
     if (!stream) {
-        Serial.print("Couldn't open read string for bufferId: ");
+        Serial.print(F("Couldn't open read string for bufferId: "));
         Serial.println(binHandler->bufferId);
         return;
     }
@@ -832,7 +832,7 @@ void PixelblazeClient::dispatchBinaryReply(ReplyHandler *handler) {
             break;
         }
         default: {
-            Serial.print("Got unexpected binary reply type: ");
+            Serial.print(F("Got unexpected binary reply type: "));
             Serial.println(binHandler->replyType);
         }
     }
@@ -949,7 +949,7 @@ bool PixelblazeClient::enqueueReply(ReplyHandler *replyHandler) {
 
 bool PixelblazeClient::enqueueReplies(int num, ...) {
     if (num == 0) {
-        Serial.println("Got empty enqueue request");
+        Serial.println(F("Got empty enqueue request"));
         return true;
     }
 
@@ -997,7 +997,7 @@ bool PixelblazeClient::enqueueReplies(int num, ...) {
 
 void PixelblazeClient::dequeueReply() {
     if (queueLength() == 0) {
-        Serial.println("Dequeue called on empty queue");
+        Serial.println(F("Dequeue called on empty queue"));
         return;
     }
 
@@ -1119,7 +1119,7 @@ bool AllPatternIterator::next(PatternIdentifiers &fillMe) {
     }
 
     if (read < 0) {
-        Serial.println("Got malformed all pattern response.");
+        Serial.println(F("Got malformed all pattern response."));
         return false;
     }
 

@@ -88,7 +88,7 @@ public:
     virtual ~PixelblazeMemBuffer() {
         //If any of our CloseableStreams are in the world, they're about to get hosed.
 
-        for (size_t idx = 0; idx < allocated) {
+        for (size_t idx = 0; idx < allocated; idx++) {
             delete[] buffers[idx];
         }
     }

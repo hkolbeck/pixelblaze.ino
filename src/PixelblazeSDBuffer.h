@@ -40,7 +40,7 @@ public:
     void deleteStreamResults(String &bufferId) override {
         String path = root + bufferId;
         if (!SD.remove(path)) {
-            Serial.print("Failed to delete file: ");
+            Serial.print(F("Failed to delete file: "));
             Serial.println(path);
         }
     }
@@ -48,7 +48,7 @@ public:
     void garbageCollect() override {
         File rootDir = SD.open(root);
         if (!rootDir || !rootDir.isDirectory()) {
-            Serial.print("Root dir doesn't exist or isn't a directory, can't garbage collect: ");
+            Serial.print(F("Root dir doesn't exist or isn't a directory, can't garbage collect: "));
             Serial.println(root);
             return;
         }
@@ -70,7 +70,7 @@ public:
                     file.close();
 
                     if (!SD.remove(filePath)) {
-                        Serial.print("Failed to remove file: ");
+                        Serial.print(F("Failed to remove file: "));
                         Serial.println(filePath);
                     }
 
