@@ -31,9 +31,6 @@ public:
     }
 };
 
-/**
- * This should connect to a Pixelblaze controller and then smoothly scale the brightness up and down forever
- */
 WiFiClient wifi;
 WebSocketClient wsClient = WebSocketClient(wifi, WEBSOCKET_HOST, WEBSOCKET_PORT);
 PixelblazeClient* pbClient = nullptr;
