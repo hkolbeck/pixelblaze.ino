@@ -17,6 +17,7 @@ PixelblazeClient::PixelblazeClient(
     byteBuffer = new uint8_t[clientConfig.binaryBufferBytes];
     textReadBuffer = new char[clientConfig.textReadBufferBytes];
     peers = new Peer[clientConfig.peerLimit];
+    controls = new Control[clientConfig.controlLimit];
     replyQueue = new ReplyHandler *[clientConfig.replyQueueSize];
     sequencerState.controls = new Control[clientConfig.controlLimit];
     playlist.items = new PlaylistItem[clientConfig.playlistLimit];
@@ -70,9 +71,37 @@ bool PixelblazeClient::getPlaylist(void (*handler)(Playlist &), String &playlist
     return sendJson(json);
 }
 
-//bool PixelblazeClient::getPlaylistIndex(void (*handler)(size_t)) {
-//    return getPlaylist(extractor);
-//}
+bool PixelblazeClient::getPlaylistIndex(void (*handler)(size_t), void (*onError)(int)) {
+    //Until lambdas are everywhere, here we are
+    class ExtractIndex : public RawTextHandler {
+    public:
+        explicit ExtractIndex(void (*handler)(size_t), void (*onError)(int)) :
+                handler(handler), onError(onError), RawTextHandler() {};
+
+        bool jsonMatches(JsonDocument &json) override {
+            return json.containsKey("playlist") && json["playlist"].containsKey("position");
+        }
+
+        void replyFailed(int cause) override {
+            onError(cause);
+        }
+
+        void handle(JsonDocument &json) override {
+            handler(json["playlist"]["position"]);
+        }
+
+    private:
+        void (*handler)(size_t);
+
+        void (*onError)(int);
+    };
+
+    json.clear();
+    json["getPlaylist"] = defaultPlaylist;
+
+    auto replyHandler = ExtractIndex(handler, onError);
+    return rawRequest(replyHandler, json);
+}
 
 bool PixelblazeClient::setPlaylistIndex(int idx) {
     json.clear();
@@ -87,10 +116,42 @@ bool PixelblazeClient::nextPattern() {
     return sendJson(json);
 }
 
-//bool PixelblazeClient::prevPattern() {
-//    PrevPlaylistReplyHandler prevHandler = PrevPlaylistReplyHandler(this);
-//    return getPlaylist(prevHandler);
-//}
+bool PixelblazeClient::prevPattern() {
+    //Until lambdas are everywhere, here we are
+    class ExtractIndexAndHitBack : public RawTextHandler {
+    public:
+        explicit ExtractIndexAndHitBack(PixelblazeClient *client) : client(client), RawTextHandler() {};
+
+        bool jsonMatches(JsonDocument &json) override {
+            return json.containsKey("playlist") && json["playlist"].containsKey("position");
+        }
+
+        void handle(JsonDocument &json) override {
+            JsonObject playlistObj = json["playlist"];
+            size_t position = playlistObj["position"];
+            size_t playlistLen = playlistObj["items"].as<JsonArray>().size();
+            if (playlistLen == 0) {
+                return;
+            }
+
+            if (position == 0) {
+                position = playlistLen;
+            }
+            position--;
+
+            client->setPlaylistIndex(position);
+        }
+
+    private:
+        PixelblazeClient *client;
+    };
+
+    json.clear();
+    json["getPlaylist"] = defaultPlaylist;
+
+    auto replyHandler = ExtractIndexAndHitBack(this);
+    return rawRequest(replyHandler, json);
+}
 
 bool PixelblazeClient::playSequence() {
     json.clear();
@@ -110,7 +171,7 @@ bool PixelblazeClient::setSequencerMode(int sequencerMode) {
     return sendJson(json);
 }
 
-bool PixelblazeClient::getPeers(void (*handler)(Peer*, size_t), void (*onError)(int)) {
+bool PixelblazeClient::getPeers(void (*handler)(Peer *, size_t), void (*onError)(int)) {
     auto *myHandler = new PeersReplyHandler(handler, onError);
     if (!enqueueReply(myHandler)) {
         delete myHandler;
@@ -148,7 +209,8 @@ bool PixelblazeClient::setBrightness(float brightness, bool saveToFlash) {
     return sendJson(json);
 }
 
-bool PixelblazeClient::getPatternControls(String &patternId, void (*handler)(String &, Control*, size_t), void (*onError)(int)) {
+bool PixelblazeClient::getPatternControls(String &patternId, void (*handler)(String &, Control *, size_t),
+                                          void (*onError)(int)) {
     auto *myHandler = new PatternControlReplyHandler(handler, onError);
 
     if (!enqueueReply(myHandler)) {
@@ -161,14 +223,61 @@ bool PixelblazeClient::getPatternControls(String &patternId, void (*handler)(Str
     return sendJson(json);
 }
 
-//bool PixelblazeClient::getCurrentPatternControls(PatternControlReplyHandler &replyHandler) {
-//    auto *myHandler = new PatternControlReplyHandler(replyHandler);
-//    auto extractor = CurrentControlsReplyExtractor(myHandler);
-//
-//    return getSystemState(noopSettingsHandler, extractor, noopExpanderConfig, WATCH_SEQ_REQ);
-//}
+bool PixelblazeClient::getCurrentPatternControls(void (*handler)(Control *, size_t), void (*onError)(int)) {
+    //Until lambdas work everywhere, here we are
+    class CurrentPatternControlExtractor : public RawTextHandler {
+    public:
+        CurrentPatternControlExtractor(Control *controls, size_t *controlCount, size_t maxControls,
+                                       void (*handler)(Control *, size_t),
+                                       void (*onError)(int))
+                : controls(controls), controlCount(controlCount), maxControls(maxControls), handler(handler),
+                  onError(onError), RawTextHandler() {};
 
-bool PixelblazeClient::getPreviewImage(String &patternId, void (*handler)(String&, CloseableStream*), bool clean, void (*onError)(int)) {
+        bool jsonMatches(JsonDocument &json) override {
+            return json.containsKey("activeProgram");
+        }
+
+        void replyFailed(int cause) override {
+            onError(cause);
+        }
+
+        void handle(JsonDocument &json) override {
+            JsonObject controlsObj = json["activeProgram"]["controls"];
+            int controlIdx = 0;
+            for (JsonPair kv: controlsObj) {
+                controls[controlIdx].name = kv.key().c_str();
+                controls[controlIdx].value = kv.value();
+                controlIdx++;
+                if (controlIdx >= maxControls) {
+                    Serial.print(F("Got more controls than could be saved: "));
+                    Serial.println(controlsObj.size());
+                    break;
+                }
+            }
+            *controlCount = controlIdx;
+        }
+
+    private:
+        void (*handler)(Control *, size_t);
+
+        void (*onError)(int);
+
+        Control *controls;
+        size_t *controlCount;
+        size_t maxControls;
+    };
+
+    auto currentControlExtractor =
+            CurrentPatternControlExtractor(controls, &controlCount,
+                                           clientConfig.controlLimit, handler, onError);
+    json.clear();
+    json["getConfig"] = true;
+
+    return rawRequest(currentControlExtractor, json);
+}
+
+bool PixelblazeClient::getPreviewImage(String &patternId, void (*handler)(String &, CloseableStream *), bool clean,
+                                       void (*onError)(int)) {
     auto *myHandler = new PreviewImageReplyHandler(patternId, handler, clean, onError);
     if (!enqueueReply(myHandler)) {
         delete myHandler;

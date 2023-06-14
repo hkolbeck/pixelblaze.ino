@@ -216,7 +216,7 @@ public:
      * @param replyHandler handler will receive an int indicating the 0-based index
      * @return true if the request was dispatched, false otherwise.
      */
-//    bool getPlaylistIndex(PlaylistIndexHandler &replyHandler);
+    bool getPlaylistIndex(void (*handler)(size_t), void (*onError)(int) = ignoreError);
 
     /**
      * Set the current pattern by its index on the active playlist
@@ -239,7 +239,7 @@ public:
      *
      * @return true if the request was dispatched, false otherwise.
      */
-//    bool prevPattern();
+    bool prevPattern();
 
     /**
      * Set the sequencer state to "play"
@@ -311,7 +311,7 @@ public:
      * @param replyHandler Handler that will receive an array of Controls and the patternId they're for
      * @return true if the request was dispatched, false otherwise.
      */
-//    bool getCurrentPatternControls(void (*handler)());
+    bool getCurrentPatternControls(void (*handler)(Control*, size_t), void (*onError)(int) = ignoreError);
 
     /**
      * Get controls for a specific pattern
@@ -560,6 +560,8 @@ private:
     PlaylistUpdate playlistUpdate;
     Peer *peers;
     size_t peerCount = 0;
+    Control *controls;
+    size_t controlCount = 0;
 
     uint8_t *byteBuffer;
     char *textReadBuffer;
