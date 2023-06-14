@@ -50,17 +50,15 @@ void setup() {
     PixelblazeUnrequestedHandler unrequestedHandler = PixelblazeUnrequestedHandler();
 
     pbClient = new PixelblazeClient(wsClient, buffer, unrequestedHandler);
-    Serial.println("Connecting websocket client...");
-    pbClient->initiateReconnect();
+    pbClient->begin();
 }
 
 int brightness = 50;
 int delta = 1;
 void loop() {
     //We're discarding everything coming in, but still better to trim it as it comes in
-    //This is also where we do some quick maintenance on the connection if there are issues
+    //This is also where we do some maintenance on the connection if there are issues
     pbClient->checkForInbound();
-
 
     brightness += delta;
     if (brightness > 100) {

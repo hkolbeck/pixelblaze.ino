@@ -39,6 +39,10 @@ PixelblazeClient::~PixelblazeClient() {
     delete[] playlistUpdate.items;
 }
 
+bool PixelblazeClient::begin() {
+    return wsClient.begin("/") == 0;
+}
+
 bool PixelblazeClient::connected() {
     return wsClient.connected();
 }
@@ -488,7 +492,7 @@ bool PixelblazeClient::connectionMaintenance() {
 
     uint32_t startTime = millis();
     while (millis() - startTime < clientConfig.maxConnRepairMs) {
-        if (wsClient.begin("/") == 0) {
+        if (begin()) {
             return true;
         }
         delay(10);

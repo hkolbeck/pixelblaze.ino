@@ -150,6 +150,13 @@ public:
     virtual ~PixelblazeClient();
 
     /**
+     * Initialize connection to the Pixelblaze
+     *
+     * @return true if successful, false otherwise
+     */
+    bool begin();
+
+    /**
      * Check if the websocket client is connected, does not check more thoroughly
      *
      * @return true if connected, otherwise false
