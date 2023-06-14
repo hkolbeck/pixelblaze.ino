@@ -33,9 +33,9 @@
 #define SEQ_MODE_SHUFFLE_ALL 1
 #define SEQ_MODE_PLAYLIST 2
 
-// Flags to indicate what elements of the reply you care about in getSettings(). Bitwise-OR them to select a subset
+// Flags to indicate what elements of the reply you care about in getSystemState(). Bitwise-OR them to select a subset
 // By default only the config and sequencer replies are tracked
-#define WATCH_CONFIG_REQ 1
+#define WATCH_SETTING_REQ 1
 #define WATCH_SEQ_REQ 2
 #define WATCH_EXPANDER_REQ 4
 
@@ -48,8 +48,8 @@ static ClientConfig defaultConfig = {};
  * but no result will ever be returned for the following operations:
  *  - getPatterns()
  *  - getPreviewImage()
- *  - getSettings() (Settings and sequencer state will be processed, expander config won't)
- *  - getRawBinary()
+ *  - getSystemState() (Settings and sequencer state will be processed, expander config won't)
+ *  - rawRequest()
  *
  * Because data can be split across multiple messages, we frequently need to re-open a write stream and append data,
  * then eventually open the completed buffer for reading. This means that close()-ing and free()-ing the returned
@@ -92,11 +92,16 @@ public:
      */
     virtual void deleteStreamResults(String &key) {};
 
+    /**
+     * Attempts to release any resources where possible to allow more write streams to be returned. Only called if
+     * makeWriteStream() fails.
+     */
     virtual void garbageCollect() {};
 };
+
 /**
  * Pixelblaze sends several message types unprompted, some of them ~100/s unless they're shut off. Extend this class
- * and implement any or all methods to handle those unprompted messages, otherwise they're dropped on the ground.
+ * and implement any or all methods to handle those unprompted messages, otherwise they're dropped.
  *
  * TODO: What happens if a pattern's code is edited?
  */
@@ -127,11 +132,17 @@ public:
     /**
      * TODO: Currently not dispatched
      *
-     * Every time a pattern is added or removed from the active playlist, a copy of that playlist is sent back
+     * Every time a pattern is added or removed from the active playlist, a copy of that playlist is sent back to
+     * connected clients.
      */
     virtual void handlePlaylistChange(PlaylistUpdate &playlistUpdate) {};
 };
 
+/**
+ * The client class.
+ *
+ * NOT THREADSAFE. DO NOT SHARE INSTANCES.
+ */
 class PixelblazeClient {
 public:
     PixelblazeClient(WebSocketClient &wsClient, PixelblazeBuffer &binaryBuffer,
@@ -139,65 +150,323 @@ public:
 
     virtual ~PixelblazeClient();
 
+    /**
+     * Check if the websocket client is connected, does not check more thoroughly
+     *
+     * @return true if connected, otherwise false
+     */
     bool connected();
 
-    bool connectionMaintenance();
+    /**
+     * Attempts to reconnect if the connection has failed. Be sure to check the network as well, all this can see is
+     * websocket no work
+     */
+    void initiateReconnect();
 
+    /**
+     * Call this on every loop() iteration or equivalent. If the client is receiving preview frames they can clog the
+     * pipes very quickly and I recommend calling it at least every 100ms. If not receiving previews at least once a
+     * second is recommended.
+     *
+     * Will go through received messages dispatching them to handlers or dropping them as appropriate until the message
+     * queue is empty or clientConfig.maxInboundCheckMs has passed
+     */
     void checkForInbound();
 
+    /**
+     * Get a list of all patterns on the device
+     *
+     * @param replyHandler handler will receive an iterator of the (id, name) pairs of all patterns on the device
+     * @return true if the request was dispatched, false otherwise
+     */
     bool getPatterns(AllPatternsReplyHandler &replyHandler);
 
+    /**
+     * Get the contents of a playlist, along with some metadata about it and its current state
+     *
+     * @param replyHandler handler will receive a Playlist object, which may be overwritten after handle() returns
+     * @param playlistName The playlist to fetch, presently only the default is supported
+     * @return true if the request was dispatched, false otherwise.
+     */
     bool getPlaylist(PlaylistReplyHandler &replyHandler, String &playlistName = defaultPlaylist);
 
+    /**
+     * Get the index on the playlist of the current pattern
+     *
+     * @param replyHandler handler will receive an int indicating the 0-based index
+     * @return true if the request was dispatched, false otherwise.
+     */
     bool getPlaylistIndex(PlaylistIndexHandler &replyHandler);
 
-    void setPlaylistIndex(int idx);
+    /**
+     * Set the current pattern by its index on the active playlist
+     *
+     * @param idx the playlist index to switch to
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool setPlaylistIndex(int idx);
 
-    void nextPattern();
+    /**
+     * Advance the pattern forward one index
+     *
+     * TODO: Does it wrap? The UI prev button doesn't
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool nextPattern();
 
-    void prevPattern();
+    /**
+     * Step the current pattern back one, wrapping if needed
+     *
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool prevPattern();
 
-    void playSequence();
+    /**
+     * Set the sequencer state to "play"
+     *
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool playSequence();
 
-    void pauseSequence();
+    /**
+     * Set the sequencer state to "pause"
+     *
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool pauseSequence();
 
-    void setSequencerMode(int sequencerMode);
+    /**
+     * Possible modes:
+     *
+     * SEQ_MODE_OFF
+     * SEQ_MODE_SHUFFLE_ALL
+     * SEQ_MODE_PLAYLIST
+     *
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool setSequencerMode(int sequencerMode);
 
+    /**
+     * TODO: Not yet implemented
+     *
+     * @return true if the request was dispatched, false otherwise.
+     */
     bool getPeers(PeersReplyHandler &replyHandler);
 
-    void setBrightness(float brightness, bool save);
+    /**
+     * Set the active brightness
+     *
+     * @param brightness clamped to [0, 1.0], with 0 being fully off and 1.0 indicating full brightness
+     * @param saveToFlash whether to persist the value through restarts. While you can send these at high volume
+     *                    for smooth dimming, only save when the value settles.
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool setBrightness(float brightness, bool saveToFlash);
 
-    void setCurrentPatternControl(String &controlName, float value, bool saveToFlash);
+    /**
+     * Set the value of a controller for the current pattern
+     *
+     * @param controlName name of the control to set, for instance "sliderMyControl"
+     * @param value clamped to [0, 1]
+     * @param saveToFlash whether to persist the value through restarts. While you can send these at high volume
+     *                    for smooth changes, only save when the value settles.
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool setCurrentPatternControl(String &controlName, float value, bool saveToFlash);
 
-    void setCurrentPatternControls(Control *controls, int numControls, bool saveToFlash);
+    /**
+     * Set the value of a set of controllers for the current pattern
+     *
+     * @param controls {name, value} of the control to set, for instance {"sliderMyControl", 0.5}
+     * @param numControls controls in the provided array
+     * @param saveToFlash whether to persist the values through restarts. While you can send these at high volume
+     *                    for smooth changes, only save when the value settles.
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool setCurrentPatternControls(Control *controls, int numControls, bool saveToFlash);
 
+    /**
+     * Fetch the state of all controls for the current pattern
+     *
+     * @param replyHandler Handler that will receive an array of Controls and the patternId they're for
+     * @return true if the request was dispatched, false otherwise.
+     */
     bool getCurrentPatternControls(PatternControlReplyHandler &replyHandler);
 
+    /**
+     * Get controls for a specific pattern
+     *
+     * @param patternId the pattern to fetch controls for
+     * @param replyHandler the handler that will receive those controls
+     * @return true if the request was dispatched, false otherwise.
+     */
     bool getPatternControls(String &patternId, PatternControlReplyHandler &replyHandler);
 
+    /**
+     * Gets a preview image for a specified pattern. The returned stream is a 100px wide by 150px tall 8-bit JPEG image.
+     * Note that many modern TFT libraries for displaying images do not support 8-bit JPEGs.
+     *
+     * @param patternId the pattern to fetch a preview for
+     * @param replyHandler handler to ingest the image stream
+     * @return true if the request was dispatched, false otherwise.
+     */
     bool getPreviewImage(String &patternId, PreviewImageReplyHandler &replyHandler);
 
-    void setBrightnessLimit(int value, bool saveToFlash);
+    /**
+     * Set the global brightness limit
+     *
+     * TODO: Do we hide the fact that the API disagrees on format for the brightness slider vs global?
+     *
+     * @param value clamped to [0, 100]
+     * @param saveToFlash whether to persist the value through restarts. While you can send these at high volume
+     *                    for smooth dimming, only save when the value settles.
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool setBrightnessLimit(int value, bool saveToFlash);
 
-    void setPixelCount(uint32_t pixels, bool saveToFlash);
+    /**
+     * Set the number of pixels controlled
+     *
+     * @param pixels Number of pixels
+     * @param saveToFlash whether to persist the value through restarts. While you can send these at high volume
+     *                    for smooth effects, only save when the value settles.
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool setPixelCount(uint32_t pixels, bool saveToFlash);
 
-    //TODO: Note about seq replies still possibly hitting unrequested handler if excluded here, also note that expander is ignored by default
-    bool getSettings(
+    /**
+     * Request the general state of the system, which comes back in three parts:
+     *  - Settings:
+     *      More or less the contents of the settings page, plus some hidden settings. It's unclear what some fields
+     *      mean but they're still returned.
+     *  - Sequence:
+     *      The current state of the pattern playing parts of the system.
+     *  - Expander Configuration:
+     *      //TODO: Not yet implemented
+     *      The configuration of the output expander.
+     *
+     *  IN NEED OF HELP: I don't have a system with an output expander to look at what exactly the traffic looks like
+     *
+     * Because you frequently only care about one of the three, you can specify which responses to actually watch for.
+     * Set the watchResponses arg to a bitwise-OR'd combination of:
+     *   WATCH_SETTING_REQ
+     *   WATCH_SEQ_REQ
+     *   WATCH_EXPANDER_REQ
+     * Note that the default drops WATCH_EXPANDER_REQ, as they can come in out-of-order and cause issues
+     *
+     * Note that because the sequencer message is identical to the pattern change message, it may get picked up by
+     * the unrequested message handler even if it's ignored here.
+     *
+     * @param settingsHandler handler for the settings response, use NoopSettingsReplyHandler if ignoring
+     * @param seqHandler handler for the sequencer response, use NoopSequencerReplyHandler if ignoring
+     *
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool getSystemState(
             SettingsReplyHandler &settingsHandler, SequencerReplyHandler &seqHandler,
             ExpanderConfigReplyHandler &expanderHandler,
-            int watchResponses = WATCH_CONFIG_REQ | WATCH_SEQ_REQ);
+            int watchResponses = WATCH_SETTING_REQ | WATCH_SEQ_REQ);
 
+    /**
+     * Utility wrapper around getSystemState()
+     *
+     * @param settingsHandler handler for the non-ignored response
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool getSettings(SettingsReplyHandler &settingsHandler);
+
+    /**
+     * Utility wrapper around getSystemState()
+     *
+     * @param seqHandler handler for the non-ignored response
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool getSequencerState(SequencerReplyHandler &seqHandler);
+
+    /**
+     * Utility wrapper around getSystemState()
+     *
+     * @param expanderHandler handler for the non-ignored response
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool getExpanderConfig(ExpanderConfigReplyHandler &expanderHandler);
+
+    /**
+     * Send a ping to the controller
+     *
+     * Note that this prompts a response that's identical to other requests, so if they overlap the round trip time will
+     * be nonsense as there's no way to tell which ack is for which message.
+     *
+     * @param replyHandler handler will receive the approximate round trip time
+     * @return true if the request was dispatched, false otherwise.
+     */
     bool ping(PingReplyHandler &replyHandler);
 
-    void sendFramePreviews(bool sendEm);
+    /**
+     * Specify whether the controller should send a preview of each render cycle. If sent they're handled in the
+     * unrequested message handler.
+     *
+     * TODO: What's the default?
+     *
+     * @param sendEm
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool sendFramePreviews(bool sendEm);
 
-    bool getRawBinary(RawBinaryHandler &replyHandler, JsonDocument &request);
+    /**
+     * Utility function for interacting with the backend in arbitrary ways if they're not implemented in this library
+     *
+     * @param replyHandler handler to deal with the resulting message
+     * @param request json to send to the backend
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool rawRequest(RawBinaryHandler &replyHandler, JsonDocument &request);
 
-    bool getRawText(RawTextHandler &replyHandler, JsonDocument &request);
+    /**
+     * Utility function for interacting with the backend in arbitrary ways if they're not implemented in this library
+     *
+     * @param replyHandler handler to deal with the resulting message
+     * @param request json to send to the backend
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool rawRequest(RawTextHandler &replyHandler, JsonDocument &request);
 
+    /**
+     * Utility function for interacting with the backend in arbitrary ways if they're not implemented in this library
+     *
+     * Note that the maximum chunk size is bounded by binaryBufferBytes
+     *
+     * @param replyHandler handler to deal with the resulting message
+     * @param request Binary stream to send to the backend
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool rawRequest(RawBinaryHandler &replyHandler, int binType, Stream &request);
+
+    /**
+     * Utility function for interacting with the backend in arbitrary ways if they're not implemented in this library
+     *
+     * Note that the maximum chunk size is bounded by binaryBufferBytes
+     *
+     * @param replyHandler handler to deal with the resulting message
+     * @param request Binary stream to send to the backend
+     * @return true if the request was dispatched, false otherwise.
+     */
+    bool rawRequest(RawTextHandler &replyHandler, int binType, Stream &request);
+
+    /**
+     * Utility function for transforming a CamelCase variable name to human readable.
+     *
+     * "sliderMyControl" => "My Control"
+     *
+     * @param camelCaseVar the variable name to humanize
+     * @param maxWords How many words to split it into max. humanizeVarName("sliderThinkLOLIDK", 2) => "Think LOLIDK"
+     * @return The humanized variable name
+     */
     static String humanizeVarName(String &camelCaseVar, int maxWords = 10);
 
 private:
+    bool connectionMaintenance(uint32_t maxWaitMs);
+
     void weedExpiredReplies();
 
     void seekingTextHasText();
@@ -230,7 +499,9 @@ private:
 
     void parseSequencerState();
 
-    void sendJson(JsonDocument &doc);
+    bool sendJson(JsonDocument &doc);
+
+    bool sendBinary(int binType, Stream& stream);
 
 private:
     WebSocketClient wsClient;

@@ -81,5 +81,6 @@ void loop() {
     }
 
     pbClient->setBrightnessLimit(brightness, false);
+    pbClient->checkForInbound(); //We're discarding everything coming in, but still better to trim it as it comes in
     delay(100);
 }

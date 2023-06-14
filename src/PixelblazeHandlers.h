@@ -261,9 +261,7 @@ private:
     size_t bufferLen;
 };
 
-/*
-  Fetches (id, name) info about all available patterns
-*/
+
 #define HANDLER_ALL_PATTERNS 3
 
 class AllPatternsReplyHandler : public BinaryReplyHandler {
@@ -293,10 +291,6 @@ private:
     bool satisfaction;
 };
 
-/*
-  Handles responses to requests for info on a specific playlist. Note that after returning from handle()
-  any data in playlist may change
-*/
 #define HANDLER_PLAYLIST 4
 
 class PlaylistReplyHandler : public TextReplyHandler {
@@ -330,10 +324,6 @@ private:
     bool satisfaction;
 };
 
-/*
-  Handle responses to requests for a list of peers on the network. Note that peers returned may be overwritten 
-  after handle() returns 
-*/
 #define HANDLER_PEERS 5
 
 class PeersReplyHandler : public TextReplyHandler {
@@ -367,9 +357,6 @@ private:
     bool satisfaction;
 };
 
-/*
-  Handles responses to requests for preview images of a pattern. The provided stream is an 8-bit JPEG file 100px wide by 150px tall
-*/
 #define HANDLER_PREVIEW_IMG 6
 
 class PreviewImageReplyHandler : public BinaryReplyHandler {
@@ -399,10 +386,6 @@ private:
     bool satisfaction;
 };
 
-/*
-  Handles responses to requests for settings. Note that data in the provided Settings object may be 
-  overwritten after handle() returns 
-*/
 #define HANDLER_SETTINGS 7
 
 class SettingsReplyHandler : public TextReplyHandler {
@@ -436,10 +419,6 @@ private:
     bool satisfaction;
 };
 
-/*
-  Handles responses to requests for info about the current sequencer state. Note that data in the
-  provided SequencerState may be overwritten after handle() returns.
-*/
 #define HANDLER_SEQ 8
 
 class SequencerReplyHandler : public TextReplyHandler {
@@ -475,10 +454,6 @@ private:
     bool satisfaction;
 };
 
-/*
-  Handles responses to requests for info on the configuration of the output expander. Note that data in 
-  ExpanderConfig may be overwritten after handle() returns
-*/
 #define HANDLER_EXPANDER_CONF 9
 
 class ExpanderConfigReplyHandler : public BinaryReplyHandler {
@@ -508,13 +483,13 @@ private:
     bool satisfaction;
 };
 
-/*
-  Handles responses to requests to ping the backend.
-
-  Lots of commands return ack, but we only do anything about it in the case of Ping. We let their acks
-  be just discarded. If this handler picks up an ack from a previous command it could lie about the
-  roundtrip, but that seems worthwhile to not clog the reply queue.
-*/
+/**
+ * Handles responses to requests to ping the backend.
+ *
+ * Lots of commands return ack, but we only do anything about it in the case of Ping. We let their acks
+ * be just discarded. If this handler picks up an ack from a previous command it could lie about the
+ * roundtrip, but that seems worthwhile to not clog the reply queue.
+ */
 #define HANDLER_PING 10
 
 class PingReplyHandler : public TextReplyHandler {
@@ -548,10 +523,6 @@ private:
     bool satisfaction;
 };
 
-/*
-  Handles responses to requests for the state of the controls for a given pattern. Note that data in returned
-  Controls may be overwritten after handle() returns 
-*/
 #define HANDLER_PATTERN_CONTROLS 11
 
 class PatternControlReplyHandler : public TextReplyHandler {
@@ -561,7 +532,7 @@ public:
 
     ~PatternControlReplyHandler() override = default;
 
-    virtual void handle(Control *controls, size_t numControls) {};
+    virtual void handle(String &patternId, Control *controls, size_t numControls) {};
 };
 
 class NoopPatternControlReplyHandler : public PatternControlReplyHandler {
@@ -571,7 +542,7 @@ public:
         satisfaction = _satisfaction;
     }
 
-    void handle(Control *controls, size_t numControls) override {}
+    void handle(String &patternId, Control *controls, size_t numControls) override {}
 
     bool isSatisfied() override {
         return satisfaction;

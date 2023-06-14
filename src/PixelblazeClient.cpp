@@ -45,13 +45,8 @@ bool PixelblazeClient::connected() {
     return wsClient.connected();
 }
 
-bool PixelblazeClient::connectionMaintenance() {
-    if (connected()) {
-        return true;
-    }
+void PixelblazeClient::initiateReconnect() {
 
-    //TODO: retries n' stuff
-    return wsClient.begin("/") == 0;
 }
 
 bool PixelblazeClient::getPatterns(AllPatternsReplyHandler &replyHandler) {
@@ -109,17 +104,17 @@ bool PixelblazeClient::getPlaylistIndex(PlaylistIndexHandler &replyHandler) {
     return getPlaylist(extractor);
 }
 
-void PixelblazeClient::setPlaylistIndex(int idx) {
+bool PixelblazeClient::setPlaylistIndex(int idx) {
     json.clear();
     JsonObject pl = json.createNestedObject("playlist");
     pl["position"] = idx;
-    sendJson(json);
+    return sendJson(json);
 }
 
-void PixelblazeClient::nextPattern() {
+bool PixelblazeClient::nextPattern() {
     json.clear();
     json["nextProgram"] = true;
-    sendJson(json);
+    return sendJson(json);
 }
 
 class PrevPlaylistReplyHandler : public PlaylistReplyHandler {
@@ -143,27 +138,27 @@ private:
 
 //This is ugly ATM because we don't cache anything. Leaving it void instead of bool because it won't surprise
 //me if a future library update adds a standalone prev command
-void PixelblazeClient::prevPattern() {
+bool PixelblazeClient::prevPattern() {
     PrevPlaylistReplyHandler prevHandler = PrevPlaylistReplyHandler(this);
-    getPlaylist(prevHandler);
+    return getPlaylist(prevHandler);
 }
 
-void PixelblazeClient::playSequence() {
+bool PixelblazeClient::playSequence() {
     json.clear();
     json["runSequencer"] = true;
-    sendJson(json);
+    return sendJson(json);
 }
 
-void PixelblazeClient::pauseSequence() {
+bool PixelblazeClient::pauseSequence() {
     json.clear();
     json["runSequencer"] = false;
-    sendJson(json);
+    return sendJson(json);
 }
 
-void PixelblazeClient::setSequencerMode(int sequencerMode) {
+bool PixelblazeClient::setSequencerMode(int sequencerMode) {
     json.clear();
     json["sequencerMode"] = sequencerMode;
-    sendJson(json);
+    return sendJson(json);
 }
 
 bool PixelblazeClient::getPeers(PeersReplyHandler &replyHandler) {
@@ -182,7 +177,7 @@ bool PixelblazeClient::getPeers(PeersReplyHandler &replyHandler) {
     return true;
 }
 
-void PixelblazeClient::setCurrentPatternControls(Control *controls, int numControls, bool saveToFlash) {
+bool PixelblazeClient::setCurrentPatternControls(Control *controls, int numControls, bool saveToFlash) {
     json.clear();
     JsonObject controlsObj = json.createNestedObject("setControls");
     for (int idx = 0; idx < numControls; idx++) {
@@ -190,22 +185,22 @@ void PixelblazeClient::setCurrentPatternControls(Control *controls, int numContr
     }
 
     json["save"] = saveToFlash;
-    sendJson(json);
+    return sendJson(json);
 }
 
-void PixelblazeClient::setCurrentPatternControl(String &controlName, float value, bool saveToFlash) {
+bool PixelblazeClient::setCurrentPatternControl(String &controlName, float value, bool saveToFlash) {
     json.clear();
     JsonObject controls = json.createNestedObject("setControls");
     controls[controlName] = value;
     json["save"] = saveToFlash;
-    sendJson(json);
+    return sendJson(json);
 }
 
-void PixelblazeClient::setBrightness(float brightness, bool saveToFlash) {
+bool PixelblazeClient::setBrightness(float brightness, bool saveToFlash) {
     json.clear();
     json["brightness"] = constrain(brightness, 0, 1);
     json["save"] = saveToFlash;
-    sendJson(json);
+    return sendJson(json);
 }
 
 bool PixelblazeClient::getPatternControls(String &patternId, PatternControlReplyHandler &replyHandler) {
@@ -220,9 +215,7 @@ bool PixelblazeClient::getPatternControls(String &patternId, PatternControlReply
 
     json.clear();
     json["getControls"] = patternId;
-    sendJson(json);
-
-    return true;
+    return sendJson(json);
 }
 
 class CurrentControlsReplyExtractor : public SequencerReplyHandler {
@@ -235,7 +228,7 @@ public:
     ~CurrentControlsReplyExtractor() override = default;
 
     void handle(SequencerState &sequencerState) override {
-        wrapped->handle(sequencerState.controls, sequencerState.controlCount);
+        wrapped->handle(sequencerState.activeProgramId, sequencerState.controls, sequencerState.controlCount);
         delete wrapped; //If not done here the wrapped handler would get freed when getCurrentPatternControls() returns
     }
 
@@ -249,7 +242,7 @@ bool PixelblazeClient::getCurrentPatternControls(PatternControlReplyHandler &rep
 
     NoopSettingsReplyHandler noopSettingsHandler = NoopSettingsReplyHandler();
     NoopExpanderConfigReplyHandler noopExpanderConfig = NoopExpanderConfigReplyHandler();
-    return getSettings(noopSettingsHandler, extractor, noopExpanderConfig);
+    return getSystemState(noopSettingsHandler, extractor, noopExpanderConfig, WATCH_SEQ_REQ);
 }
 
 bool PixelblazeClient::getPreviewImage(String &patternId, PreviewImageReplyHandler &replyHandler) {
@@ -264,25 +257,24 @@ bool PixelblazeClient::getPreviewImage(String &patternId, PreviewImageReplyHandl
 
     json.clear();
     json["getPreviewImg"] = patternId;
-    sendJson(json);
-    return true;
+    return sendJson(json);
 }
 
-void PixelblazeClient::setBrightnessLimit(int value, bool saveToFlash) {
+bool PixelblazeClient::setBrightnessLimit(int value, bool saveToFlash) {
     json.clear();
     json["maxBrightness"] = constrain(value, 0, 100);
     json["save"] = saveToFlash;
-    sendJson(json);
+    return sendJson(json);
 }
 
-void PixelblazeClient::setPixelCount(uint32_t pixels, bool saveToFlash) {
+bool PixelblazeClient::setPixelCount(uint32_t pixels, bool saveToFlash) {
     json.clear();
     json["pixelCount"] = pixels;
     json["save"] = saveToFlash;
-    sendJson(json);
+    return sendJson(json);
 }
 
-bool PixelblazeClient::getSettings(
+bool PixelblazeClient::getSystemState(
         SettingsReplyHandler &settingsHandler,
         SequencerReplyHandler &seqHandler,
         ExpanderConfigReplyHandler &expanderHandler,
@@ -293,7 +285,7 @@ bool PixelblazeClient::getSettings(
     auto mySettingsHandler = new SettingsReplyHandler(settingsHandler);
     mySettingsHandler->requestTsMs = timeMs;
     mySettingsHandler->satisfied = false;
-    if (!(watchResponses & WATCH_CONFIG_REQ)) {
+    if (!(watchResponses & WATCH_SETTING_REQ)) {
         mySettingsHandler->satisfied = true;
     }
 
@@ -320,8 +312,23 @@ bool PixelblazeClient::getSettings(
 
     json.clear();
     json["getConfig"] = true;
-    sendJson(json);
-    return true;
+    return sendJson(json);
+}
+
+static NoopSettingsReplyHandler noopSettings = NoopSettingsReplyHandler();
+static NoopSequencerReplyHandler noopSeq = NoopSequencerReplyHandler();
+static NoopExpanderConfigReplyHandler noopExpander = NoopExpanderConfigReplyHandler();
+
+bool PixelblazeClient::getSettings(SettingsReplyHandler &settingsHandler) {
+    return getSystemState(settingsHandler, noopSeq, noopExpander, WATCH_SETTING_REQ);
+}
+
+bool PixelblazeClient::getSequencerState(SequencerReplyHandler &seqHandler) {
+    return getSystemState(noopSettings, seqHandler, noopExpander, WATCH_SEQ_REQ);
+}
+
+bool PixelblazeClient::getExpanderConfig(ExpanderConfigReplyHandler &expanderHandler) {
+    return getSystemState(noopSettings, noopSeq, expanderHandler, WATCH_EXPANDER_REQ);
 }
 
 bool PixelblazeClient::ping(PingReplyHandler &replyHandler) {
@@ -336,17 +343,16 @@ bool PixelblazeClient::ping(PingReplyHandler &replyHandler) {
 
     json.clear();
     json["ping"] = true;
-    sendJson(json);
-    return true;
+    return sendJson(json);
 }
 
-void PixelblazeClient::sendFramePreviews(bool sendEm) {
+bool PixelblazeClient::sendFramePreviews(bool sendEm) {
     json.clear();
     json["sendUpdates"] = sendEm;
-    sendJson(json);
+    return sendJson(json);
 }
 
-bool PixelblazeClient::getRawBinary(RawBinaryHandler &replyHandler, JsonDocument &request) {
+bool PixelblazeClient::rawRequest(RawBinaryHandler &replyHandler, JsonDocument &request) {
     auto *myHandler = new RawBinaryHandler(replyHandler);
     myHandler->requestTsMs = millis();
     myHandler->satisfied = false;
@@ -356,11 +362,10 @@ bool PixelblazeClient::getRawBinary(RawBinaryHandler &replyHandler, JsonDocument
         return false;
     }
 
-    sendJson(request);
-    return true;
+    return sendJson(request);
 }
 
-bool PixelblazeClient::getRawText(RawTextHandler &replyHandler, JsonDocument &request) {
+bool PixelblazeClient::rawRequest(RawTextHandler &replyHandler, JsonDocument &request) {
     auto *myHandler = new RawTextHandler(replyHandler);
     myHandler->requestTsMs = millis();
     myHandler->satisfied = false;
@@ -370,130 +375,34 @@ bool PixelblazeClient::getRawText(RawTextHandler &replyHandler, JsonDocument &re
         return false;
     }
 
-    sendJson(request);
-    return true;
+    return sendJson(request);
 }
 
-void PixelblazeClient::weedExpiredReplies() {
-    uint32_t currentTimeMs = millis();
-    while (queueLength() > 0) {
-        if (replyQueue[queueFront]->isSatisfied()) {
-            queueFront = (queueFront + 1) % clientConfig.replyQueueSize;
-        } else if (replyQueue[queueFront]->requestTsMs + clientConfig.maxResponseWaitMs < currentTimeMs) {
-            replyQueue[queueFront]->replyFailed(FAILED_TIMED_OUT);
-            queueFront = (queueFront + 1) % clientConfig.replyQueueSize;
-        } else {
-            return;
-        }
+bool PixelblazeClient::rawRequest(RawBinaryHandler &replyHandler, int binType, Stream &request) {
+    auto *myHandler = new RawBinaryHandler(replyHandler);
+    myHandler->requestTsMs = millis();
+    myHandler->satisfied = false;
+
+    if (!enqueueReply(myHandler)) {
+        delete myHandler;
+        return false;
     }
+
+    return sendBinary(binType, request);
 }
 
-void PixelblazeClient::seekingTextHasText() {
-    DeserializationError deErr = deserializeJson(json, wsClient.readString());
-    if (deErr) {
-        Serial.print("Message deserialization error: ");
-        Serial.println(deErr.f_str());
-    } else {
-        if (replyQueue[queueFront]->jsonMatches(json)) {
-            dispatchTextReply(replyQueue[queueFront]);
-            dequeueReply();
-        } else {
-            handleUnrequestedJson();
-        }
+bool PixelblazeClient::rawRequest(RawTextHandler &replyHandler, int binType, Stream &request) {
+    auto *myHandler = new RawTextHandler(replyHandler);
+    myHandler->requestTsMs = millis();
+    myHandler->satisfied = false;
+
+    if (!enqueueReply(myHandler)) {
+        delete myHandler;
+        return false;
     }
+
+    return sendBinary(binType, request);
 }
-
-void PixelblazeClient::seekingTextHasBinary() {
-    handleUnrequestedBinary(wsClient.read());
-}
-
-void PixelblazeClient::seekingBinaryHasBinary() {
-    auto *binaryHandler = (BinaryReplyHandler *) replyQueue[queueFront];
-    int frameType = wsClient.read();
-    if (frameType < 0) {
-        Serial.println("Empty binary body received");
-    } else if (binaryReadType < 0) {
-        //We've read nothing so far, blank slate
-        if (frameType == binaryHandler->binType) {
-            int frameFlag = wsClient.read();
-            if (frameFlag & FRAME_FIRST & FRAME_LAST) {
-                //Lone message
-                if (readBinaryToStream(binaryHandler, binaryHandler->bufferId, false)) {
-                    dispatchBinaryReply(replyQueue[queueFront]);
-                }
-                if (replyQueue[queueFront]->shouldDeleteBuffer()) {
-                    binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
-                }
-                dequeueReply();
-            } else if (frameFlag & FRAME_FIRST) {
-                if (!readBinaryToStream(binaryHandler, binaryHandler->bufferId, false)) {
-                    binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
-                    dequeueReply();
-                    return;
-                }
-                binaryReadType = frameType;
-            } else {
-                //Frame was middle, last, or 0, none of which should happen. Drop it and keep going
-                Serial.print("Got unexpected frameFlag: ");
-                Serial.print(frameFlag);
-                Serial.print("For frameType: ");
-                Serial.println(frameType);
-            }
-        } else {
-            handleUnrequestedBinary(frameType);
-        }
-    } else if (frameType == binaryReadType) {
-        //We're mid read and the latest is compatible
-        int frameFlag = wsClient.read();
-        if (frameFlag & FRAME_LAST) {
-            if (readBinaryToStream(binaryHandler,binaryHandler->bufferId, true)) {
-                dispatchBinaryReply(replyQueue[queueFront]);
-            }
-
-            if (replyQueue[queueFront]->shouldDeleteBuffer()) {
-                binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
-            }
-            dequeueReply();
-        } else if (frameFlag & FRAME_MIDDLE) {
-            if (!readBinaryToStream(binaryHandler, binaryHandler->bufferId, true)) {
-                binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
-                dequeueReply();
-                return;
-            }
-        } else {
-            //Frame was first or 0, neither of which should happen
-            Serial.print("Got unexpected frameFlag: ");
-            Serial.print(frameFlag);
-            Serial.print("For frameType: ");
-            Serial.println(frameType);
-        }
-    } else {
-        //We're mid read and just got an incompatible frame
-        if (!handleUnrequestedBinary(frameType)) {
-            Serial.print("Expected frameType: ");
-            Serial.print(binaryReadType);
-            Serial.print(" but got: ");
-            Serial.println(frameType);
-
-            //Scrap the current read, if the finisher never comes it would drop requested events until weeded
-            binaryHandler->replyFailed(FAILED_MULTIPART_READ_INTERRUPTED);
-            binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
-            dequeueReply();
-            binaryReadType = -1;
-        }
-    }
-}
-
-void PixelblazeClient::seekingBinaryHasText() {
-    DeserializationError deErr = deserializeJson(json, wsClient.readString());
-    if (deErr) {
-        Serial.print("Message deserialization error: ");
-        Serial.println(deErr.f_str());
-    } else {
-        handleUnrequestedJson();
-    }
-}
-
 
 void PixelblazeClient::checkForInbound() {
     weedExpiredReplies();
@@ -571,8 +480,141 @@ void PixelblazeClient::checkForInbound() {
     }
 }
 
-bool PixelblazeClient::readBinaryToStream(ReplyHandler* handler, String &bufferId, bool append) {
-    CloseableStream* stream = binaryBuffer.makeWriteStream(bufferId, append);
+/////////////////////////////
+// Begin Private Functions //
+/////////////////////////////
+
+bool PixelblazeClient::connectionMaintenance(uint32_t maxWaitMs) {
+    if (connected()) {
+        return true;
+    }
+
+    //TODO: retries n' stuff
+    return wsClient.begin("/") == 0;
+}
+
+void PixelblazeClient::weedExpiredReplies() {
+    uint32_t currentTimeMs = millis();
+    while (queueLength() > 0) {
+        if (replyQueue[queueFront]->isSatisfied()) {
+            queueFront = (queueFront + 1) % clientConfig.replyQueueSize;
+        } else if (replyQueue[queueFront]->requestTsMs + clientConfig.maxResponseWaitMs < currentTimeMs) {
+            replyQueue[queueFront]->replyFailed(FAILED_TIMED_OUT);
+            queueFront = (queueFront + 1) % clientConfig.replyQueueSize;
+        } else {
+            return;
+        }
+    }
+}
+
+void PixelblazeClient::seekingTextHasText() {
+    DeserializationError deErr = deserializeJson(json, wsClient.readString());
+    if (deErr) {
+        Serial.print("Message deserialization error: ");
+        Serial.println(deErr.f_str());
+    } else {
+        if (replyQueue[queueFront]->jsonMatches(json)) {
+            dispatchTextReply(replyQueue[queueFront]);
+            dequeueReply();
+        } else {
+            handleUnrequestedJson();
+        }
+    }
+}
+
+void PixelblazeClient::seekingTextHasBinary() {
+    handleUnrequestedBinary(wsClient.read());
+}
+
+void PixelblazeClient::seekingBinaryHasBinary() {
+    auto *binaryHandler = (BinaryReplyHandler *) replyQueue[queueFront];
+    int frameType = wsClient.read();
+    if (frameType < 0) {
+        Serial.println("Empty binary body received");
+    } else if (binaryReadType < 0) {
+        //We've read nothing so far, blank slate
+        if (frameType == binaryHandler->binType) {
+            int frameFlag = wsClient.read();
+            if (frameFlag & FRAME_FIRST & FRAME_LAST) {
+                //Lone message
+                if (readBinaryToStream(binaryHandler, binaryHandler->bufferId, false)) {
+                    dispatchBinaryReply(replyQueue[queueFront]);
+                }
+                if (replyQueue[queueFront]->shouldDeleteBuffer()) {
+                    binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
+                }
+                dequeueReply();
+            } else if (frameFlag & FRAME_FIRST) {
+                if (!readBinaryToStream(binaryHandler, binaryHandler->bufferId, false)) {
+                    binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
+                    dequeueReply();
+                    return;
+                }
+                binaryReadType = frameType;
+            } else {
+                //Frame was middle, last, or 0, none of which should happen. Drop it and keep going
+                Serial.print("Got unexpected frameFlag: ");
+                Serial.print(frameFlag);
+                Serial.print("For frameType: ");
+                Serial.println(frameType);
+            }
+        } else {
+            handleUnrequestedBinary(frameType);
+        }
+    } else if (frameType == binaryReadType) {
+        //We're mid read and the latest is compatible
+        int frameFlag = wsClient.read();
+        if (frameFlag & FRAME_LAST) {
+            if (readBinaryToStream(binaryHandler, binaryHandler->bufferId, true)) {
+                dispatchBinaryReply(replyQueue[queueFront]);
+            }
+
+            if (replyQueue[queueFront]->shouldDeleteBuffer()) {
+                binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
+            }
+            dequeueReply();
+        } else if (frameFlag & FRAME_MIDDLE) {
+            if (!readBinaryToStream(binaryHandler, binaryHandler->bufferId, true)) {
+                binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
+                dequeueReply();
+                return;
+            }
+        } else {
+            //Frame was first or 0, neither of which should happen
+            Serial.print("Got unexpected frameFlag: ");
+            Serial.print(frameFlag);
+            Serial.print("For frameType: ");
+            Serial.println(frameType);
+        }
+    } else {
+        //We're mid read and just got an incompatible frame
+        if (!handleUnrequestedBinary(frameType)) {
+            Serial.print("Expected frameType: ");
+            Serial.print(binaryReadType);
+            Serial.print(" but got: ");
+            Serial.println(frameType);
+
+            //Scrap the current read, if the finisher never comes it would drop requested events until weeded
+            binaryHandler->replyFailed(FAILED_MULTIPART_READ_INTERRUPTED);
+            binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
+            dequeueReply();
+            binaryReadType = -1;
+        }
+    }
+}
+
+void PixelblazeClient::seekingBinaryHasText() {
+    DeserializationError deErr = deserializeJson(json, wsClient.readString());
+    if (deErr) {
+        Serial.print("Message deserialization error: ");
+        Serial.println(deErr.f_str());
+    } else {
+        handleUnrequestedJson();
+    }
+}
+
+bool PixelblazeClient::readBinaryToStream(ReplyHandler *handler, String &bufferId, bool append) {
+    CloseableStream *stream = binaryBuffer.makeWriteStream(bufferId, append);
     if (!stream) {
         Serial.println("Couldn't open write stream, attempting to garbage collect");
         binaryBuffer.garbageCollect();
@@ -840,10 +882,10 @@ String PixelblazeClient::humanizeVarName(String &camelCaseVar, int maxWords) {
     return result;
 }
 
-void PixelblazeClient::sendJson(JsonDocument &doc) {
+bool PixelblazeClient::sendJson(JsonDocument &doc) {
     wsClient.beginMessage(FORMAT_TEXT);
     serializeJson(doc, wsClient);
-    wsClient.endMessage();
+    return !wsClient.endMessage();
 }
 
 void PixelblazeClient::handleUnrequestedJson() {
@@ -917,7 +959,7 @@ bool PixelblazeClient::enqueueReplies(int num, ...) {
         return true;
     }
 
-    //In order to drop handling parts of a response like from getSettings, sometimes we mark replies
+    //In order to drop handling parts of a response like from getSystemState, sometimes we mark replies
     //satisfied before we even enqueue them. There are probably cleaner ways but this works.
     int toEnqueue = 0;
     va_list arguments;
@@ -1016,6 +1058,51 @@ void PixelblazeClient::compactQueue() {
         queueBack = toKeep;
     }
 }
+
+bool PixelblazeClient::sendBinary(int binType, Stream &stream) {
+    size_t freeBufferLen = clientConfig.binaryBufferBytes - 2;
+    bool hasSent = false;
+    while (true) {
+        size_t read = stream.readBytes(byteBuffer, freeBufferLen);
+        if (read >= freeBufferLen) {
+            int frameType = hasSent ? FRAME_MIDDLE : FRAME_FIRST;
+            wsClient.beginMessage(FORMAT_BINARY);
+            wsClient.write(binType);
+            wsClient.write(frameType);
+            wsClient.write(byteBuffer, read);
+            if (wsClient.endMessage()) {
+                return false;
+            }
+
+            hasSent = true;
+        } else if (read > 0) {
+            int frameType = hasSent ? FRAME_LAST : FRAME_FIRST | FRAME_LAST;
+            wsClient.beginMessage(FORMAT_BINARY);
+            wsClient.write(binType);
+            wsClient.write(frameType);
+            wsClient.write(byteBuffer, read);
+            if (wsClient.endMessage()) {
+                return false;
+            }
+
+            hasSent = true;
+        } else {
+            if (hasSent) {
+                //Our data broke perfectly along frame boundaries, hopefully sending an empty
+                //last frame doesn't break things
+                wsClient.beginMessage(FORMAT_BINARY);
+                wsClient.write(binType);
+                wsClient.write(FRAME_LAST);
+                if (wsClient.endMessage()) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+}
+
 
 bool AllPatternIterator::next(PatternIdentifiers &fillMe) {
     size_t buffIdx = 0;
