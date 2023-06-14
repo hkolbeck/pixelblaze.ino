@@ -9,8 +9,8 @@ operation is fundamentally different. Where the python client is largely synchro
 forget with eventual updates or register handlers for events that come in with no request issued.
 
 In general, the client works in three ways depending on the operation:
- - "set" operations: fire and forget with no completion-ack possible, only assurance is that the message was acked by 
-   the Pixelblaze
+ - "set" operations: fire and forget with no completion-ack possible, only assurance is that the message was received by 
+   the Pixelblaze HTTP server
  - "get" operations: send a request, passing along a handler to be invoked when or if a response is received. That
    handler will be passed the most parsed and annotated version of the data possible.
  - "watch" operations: The pixelblaze can send hundreds of events per second to connected clients with no prompting.

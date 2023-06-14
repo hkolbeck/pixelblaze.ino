@@ -60,7 +60,6 @@ public:
         File file = rootDir.openNextFile();
         while (file) {
             if (file.isDirectory()) {
-                //Subdirs are unexpected, but we'll just log and move on
                 Serial.print("Unexpected dir in filing area: ");
                 Serial.print(root + file.name());
             } else if (isTrash(file)) {
