@@ -61,7 +61,8 @@ public:
         while (file) {
             if (file.isDirectory()) {
                 Serial.print("Unexpected dir in filing area: ");
-                Serial.print(root + file.name());
+                Serial.print(root);
+                Serial.println(file.name());
             } else if (isTrash(file)) {
                 String filePath = root + file.name();
                 file.close();
