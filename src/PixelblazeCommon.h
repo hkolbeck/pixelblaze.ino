@@ -109,7 +109,7 @@ struct ClientConfig {
     size_t replyQueueSize = 100;
     size_t maxResponseWaitMs = 5000;
     size_t maxInboundCheckMs = 300;
-    size_t framePreviewBufferBytes = 300;
+    size_t framePreviewBufferBytes = 3 * 100;
     size_t textReadBufferBytes = 128;
     size_t syncPollWaitMs = 5;
     size_t controlLimit = 25;

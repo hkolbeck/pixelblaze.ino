@@ -16,6 +16,15 @@
 #define BIN_TYPE_PUT_PIXEL_MAP 8
 #define BIN_TYPE_EXPANDER_CONFIG 9
 
+#define FAILED_TIMED_OUT 1
+#define FAILED_BUFFER_ALLOC_FAIL 2
+#define FAILED_MULTIPART_READ_INTERRUPTED 3
+#define FAILED_STREAM_WRITE_FAILURE 4
+#define FAILED_MALFORMED_HANDLER 5
+#define FAILED_MISC_1 6
+#define FAILED_MISC_2 7
+#define FAILED_MISC_3 8
+
 static String GARBAGE = "GARBAGE";
 
 /*
@@ -44,6 +53,8 @@ public:
     };
 
     virtual bool cleanup() {}
+
+    virtual void replyFailed(int cause) {}
 
     virtual bool isSatisfied() {
         return satisfied;

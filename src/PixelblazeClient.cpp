@@ -377,8 +377,10 @@ bool PixelblazeClient::getRawText(RawTextHandler &replyHandler, JsonDocument &re
 void PixelblazeClient::weedExpiredReplies() {
     uint32_t currentTimeMs = millis();
     while (queueLength() > 0) {
-        if (replyQueue[queueFront]->isSatisfied() ||
-            replyQueue[queueFront]->requestTsMs + clientConfig.maxResponseWaitMs < currentTimeMs) {
+        if (replyQueue[queueFront]->isSatisfied()) {
+            queueFront = (queueFront + 1) % clientConfig.replyQueueSize;
+        } else if (replyQueue[queueFront]->requestTsMs + clientConfig.maxResponseWaitMs < currentTimeMs) {
+            replyQueue[queueFront]->replyFailed(FAILED_TIMED_OUT);
             queueFront = (queueFront + 1) % clientConfig.replyQueueSize;
         } else {
             return;
@@ -416,7 +418,7 @@ void PixelblazeClient::seekingBinaryHasBinary() {
             int frameFlag = wsClient.read();
             if (frameFlag & FRAME_FIRST & FRAME_LAST) {
                 //Lone message
-                if (readBinaryToStream(binaryHandler->bufferId, false)) {
+                if (readBinaryToStream(binaryHandler, binaryHandler->bufferId, false)) {
                     dispatchBinaryReply(replyQueue[queueFront]);
                 }
                 if (replyQueue[queueFront]->shouldDeleteBuffer()) {
@@ -424,14 +426,14 @@ void PixelblazeClient::seekingBinaryHasBinary() {
                 }
                 dequeueReply();
             } else if (frameFlag & FRAME_FIRST) {
-                if (!readBinaryToStream(binaryHandler->bufferId, false)) {
+                if (!readBinaryToStream(binaryHandler, binaryHandler->bufferId, false)) {
                     binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
                     dequeueReply();
                     return;
                 }
                 binaryReadType = frameType;
             } else {
-                //Frame was middle, last, or 0, none of which should happen
+                //Frame was middle, last, or 0, none of which should happen. Drop it and keep going
                 Serial.print("Got unexpected frameFlag: ");
                 Serial.print(frameFlag);
                 Serial.print("For frameType: ");
@@ -444,7 +446,7 @@ void PixelblazeClient::seekingBinaryHasBinary() {
         //We're mid read and the latest is compatible
         int frameFlag = wsClient.read();
         if (frameFlag & FRAME_LAST) {
-            if (readBinaryToStream(binaryHandler->bufferId, true)) {
+            if (readBinaryToStream(binaryHandler,binaryHandler->bufferId, true)) {
                 dispatchBinaryReply(replyQueue[queueFront]);
             }
 
@@ -453,7 +455,7 @@ void PixelblazeClient::seekingBinaryHasBinary() {
             }
             dequeueReply();
         } else if (frameFlag & FRAME_MIDDLE) {
-            if (!readBinaryToStream(binaryHandler->bufferId, true)) {
+            if (!readBinaryToStream(binaryHandler, binaryHandler->bufferId, true)) {
                 binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
                 dequeueReply();
                 return;
@@ -474,6 +476,7 @@ void PixelblazeClient::seekingBinaryHasBinary() {
             Serial.println(frameType);
 
             //Scrap the current read, if the finisher never comes it would drop requested events until weeded
+            binaryHandler->replyFailed(FAILED_MULTIPART_READ_INTERRUPTED);
             binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
             dequeueReply();
             binaryReadType = -1;
@@ -544,6 +547,7 @@ void PixelblazeClient::checkForInbound() {
             if (soughtFormat != FORMAT_TEXT && soughtFormat != FORMAT_BINARY) {
                 Serial.print("Unexpected sought format: ");
                 Serial.println(soughtFormat);
+                replyQueue[queueFront]->replyFailed(FAILED_MALFORMED_HANDLER);
                 dequeueReply();
             } else if (format == FORMAT_TEXT) {
                 if (soughtFormat == FORMAT_TEXT) {
@@ -558,9 +562,8 @@ void PixelblazeClient::checkForInbound() {
                     seekingBinaryHasBinary();
                 }
             } else {
-                Serial.print("Unexpected reply format: ");
+                Serial.print("Dropping message with unexpected reply format: ");
                 Serial.println(format);
-                dequeueReply();
             }
         }
 
@@ -568,7 +571,7 @@ void PixelblazeClient::checkForInbound() {
     }
 }
 
-bool PixelblazeClient::readBinaryToStream(String &bufferId, bool append) {
+bool PixelblazeClient::readBinaryToStream(ReplyHandler* handler, String &bufferId, bool append) {
     CloseableStream* stream = binaryBuffer.makeWriteStream(bufferId, append);
     if (!stream) {
         Serial.println("Couldn't open write stream, attempting to garbage collect");
@@ -579,6 +582,7 @@ bool PixelblazeClient::readBinaryToStream(String &bufferId, bool append) {
     if (!stream) {
         Serial.print("Failed to get write stream for: ");
         Serial.println(bufferId);
+        handler->replyFailed(FAILED_BUFFER_ALLOC_FAIL);
         return false;
     }
 
@@ -589,6 +593,7 @@ bool PixelblazeClient::readBinaryToStream(String &bufferId, bool append) {
         if (bytesRead != written) {
             Serial.print("Partial write on stream for bufferId: ");
             Serial.println(bufferId);
+            handler->replyFailed(FAILED_STREAM_WRITE_FAILURE);
             return false;
         }
 
@@ -892,7 +897,7 @@ bool PixelblazeClient::handleUnrequestedBinary(int frameType) {
     return false;
 }
 
-size_t PixelblazeClient::queueLength() {
+size_t PixelblazeClient::queueLength() const {
     if (queueFront > queueBack) {
         //Queue shape: |***B...F**|
         return queueBack + (clientConfig.replyQueueSize - queueFront);

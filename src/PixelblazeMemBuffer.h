@@ -85,6 +85,14 @@ public:
         buffers = new NamedBuffer *[numBuffers];
     }
 
+    virtual ~PixelblazeMemBuffer() {
+        //If any of our CloseableStreams are in the world, they're about to get hosed.
+
+        for (size_t idx = 0; idx < allocated) {
+            delete[] buffers[idx];
+        }
+    }
+
 private:
     CloseableStream *makeWriteStream(String &key, bool append) override {
         int buffIdx = 0;
