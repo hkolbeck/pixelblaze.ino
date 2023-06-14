@@ -34,6 +34,8 @@ In general, the client works in three ways depending on the operation:
 #define PLAYLIST_DURATION_MS 30000
 
 static size_t playlistLen = 0;
+
+// This is a simple usage of the watcher class to stay up to date on the length of the playlist
 class PlaylistChangeWatcher : public PixelblazeWatcher {
 public:
     void handlePlaylistChange(PlaylistUpdate &playlistUpdate) override {
@@ -41,6 +43,7 @@ public:
     }
 };
 
+//This is what we pass to be called when we issue a get for the playlist
 void extractPlaylistLen(Playlist& playlist) {
     playlistLen = playlist.numItems;
 }
@@ -93,6 +96,24 @@ void loop() {
 }
 ```
 
+If you're looking at this and feeling race condition shivers up your spine, **good**. Instances of this library are very
+explicitly **not** threadsafe, and the structs passed into "get" handlers are overwritten the minute that handler
+returns. It is, however, safe to hold multiple client instances.
+
+TODO
+----
+- Testing, testing, testing. I need to stop writing code and put together a rig to test all this, but that hasn't
+  happened yet.
+  - I don't have an expander or the energy to put together a rig with one for this, if you do let's talk?
+  - I don't currently have a strong use case for sync, though I (hopefully) will soon, if you have one put together and
+    know how to operate a browser dev utility, let's talk?
+  - I just generally have really unpredictable energy levels, so just about any enthusiasm and help is welcome.
+- Resting, resting, resting. I got a little too into this, I probably need to step away for a few days and at least
+  fix my sleep schedule.
+- Actually sit down with Ben to double check my understanding of a bunch of things.
+- Actual docs, not just comments.
+- Hunt down all the memory leaks I almost certainly included, I feel like I can hear valgrind cackling at me from its
+  rightful place in hell.
 
 Confession
 ----------
