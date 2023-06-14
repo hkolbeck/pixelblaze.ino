@@ -43,10 +43,6 @@ bool PixelblazeClient::connected() {
     return wsClient.connected();
 }
 
-void PixelblazeClient::initiateReconnect() {
-
-}
-
 bool PixelblazeClient::getPatterns(AllPatternsReplyHandler &replyHandler) {
     auto *myHandler = new AllPatternsReplyHandler(replyHandler);
     myHandler->requestTsMs = millis();
@@ -400,6 +396,12 @@ bool PixelblazeClient::rawRequest(RawTextHandler &replyHandler, int binType, Str
 }
 
 void PixelblazeClient::checkForInbound() {
+    if (!connectionMaintenance()) {
+        evictQueue(FAILED_CONNECTION_LOST);
+        Serial.println(F("Couldn't connect to Pixelblaze websocket, bailing from checkForInbound()"));
+        return;
+    }
+
     weedExpiredReplies();
     uint32_t startTime = millis();
 
@@ -479,13 +481,20 @@ void PixelblazeClient::checkForInbound() {
 // Begin Private Functions //
 /////////////////////////////
 
-bool PixelblazeClient::connectionMaintenance(uint32_t maxWaitMs) {
+bool PixelblazeClient::connectionMaintenance() {
     if (connected()) {
         return true;
     }
 
-    //TODO: retries n' stuff
-    return wsClient.begin("/") == 0;
+    uint32_t startTime = millis();
+    while (millis() - startTime < clientConfig.maxConnRepairMs) {
+        if (wsClient.begin("/") == 0) {
+            return true;
+        }
+        delay(10);
+    }
+
+    return false;
 }
 
 void PixelblazeClient::weedExpiredReplies() {
@@ -1053,6 +1062,17 @@ void PixelblazeClient::compactQueue() {
     }
 }
 
+void PixelblazeClient::evictQueue(int reason) {
+    for (size_t idx = queueFront; idx != queueBack; idx = (idx + 1) % clientConfig.replyQueueSize) {
+        replyQueue[idx]->replyFailed(reason);
+        delete replyQueue[idx];
+        replyQueue[idx] = nullptr;
+    }
+
+    queueFront = 0;
+    queueBack = 0;
+}
+
 bool PixelblazeClient::sendBinary(int binType, Stream &stream) {
     size_t freeBufferLen = clientConfig.binaryBufferBytes - 2;
     bool hasSent = false;
@@ -1096,7 +1116,6 @@ bool PixelblazeClient::sendBinary(int binType, Stream &stream) {
         }
     }
 }
-
 
 bool AllPatternIterator::next(PatternIdentifiers &fillMe) {
     size_t buffIdx = 0;

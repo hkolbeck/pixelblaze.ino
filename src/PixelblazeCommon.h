@@ -114,6 +114,7 @@ struct ClientConfig {
     size_t controlLimit = 25;
     size_t peerLimit = 25;
     size_t playlistLimit = 150;
+    size_t maxConnRepairMs = 300;
 };
 
 class CloseableStream : public Stream {

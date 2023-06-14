@@ -34,7 +34,6 @@ void setup() {
         Serial.print("Attempting to connect to Network named: ");
         Serial.println(WIFI_SSID);
 
-        // Connect to WPA/WPA2 network:
         WiFi.begin(WIFI_SSID, WIFI_PW);
         delay(1000);
     }
@@ -51,23 +50,17 @@ void setup() {
     PixelblazeUnrequestedHandler unrequestedHandler = PixelblazeUnrequestedHandler();
 
     pbClient = new PixelblazeClient(wsClient, buffer, unrequestedHandler);
-
-    if (!pbClient) {
-        Serial.println("Failed to create client.");
-        while (true) {}
-    }
+    Serial.println("Connecting websocket client...");
+    pbClient->initiateReconnect();
 }
 
 int brightness = 50;
 int delta = 1;
 void loop() {
-    while (!pbClient->connected()) {
-        Serial.println("Connecting websocket client...");
-        if (!pbClient->connectionMaintenance()) {
-            Serial.println("Connection failed, retrying");
-            delay(1000);
-        }
-    }
+    //We're discarding everything coming in, but still better to trim it as it comes in
+    //This is also where we do some quick maintenance on the connection if there are issues
+    pbClient->checkForInbound();
+
 
     brightness += delta;
     if (brightness > 100) {
@@ -81,6 +74,5 @@ void loop() {
     }
 
     pbClient->setBrightnessLimit(brightness, false);
-    pbClient->checkForInbound(); //We're discarding everything coming in, but still better to trim it as it comes in
     delay(100);
 }

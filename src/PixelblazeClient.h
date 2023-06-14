@@ -157,18 +157,14 @@ public:
     bool connected();
 
     /**
-     * Attempts to reconnect if the connection has failed. Be sure to check the network as well, all this can see is
-     * websocket no work
-     */
-    void initiateReconnect();
-
-    /**
      * Call this on every loop() iteration or equivalent. If the client is receiving preview frames they can clog the
      * pipes very quickly and I recommend calling it at least every 100ms. If not receiving previews at least once a
      * second is recommended.
      *
      * Will go through received messages dispatching them to handlers or dropping them as appropriate until the message
      * queue is empty or clientConfig.maxInboundCheckMs has passed
+     *
+     * In addition, this also performs maintenance on the websocket connection if needed
      */
     void checkForInbound();
 
@@ -464,7 +460,7 @@ public:
     static String humanizeVarName(String &camelCaseVar, int maxWords = 10);
 
 private:
-    bool connectionMaintenance(uint32_t maxWaitMs);
+    bool connectionMaintenance();
 
     void weedExpiredReplies();
 
@@ -495,6 +491,8 @@ private:
     void dequeueReply();
 
     void compactQueue();
+
+    void evictQueue(int reason);
 
     void parseSequencerState();
 
