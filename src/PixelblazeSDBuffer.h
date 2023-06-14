@@ -5,24 +5,28 @@
 #include <SD.h>
 
 //Should only ever be invoked for streams that are actually files
-void closeFileStream(Stream* stream) {
-    File* asFile = (File*) stream;
+void closeFileStream(Stream *stream) {
+    File *asFile = (File *) stream;
     asFile->close();
 }
 
-size_t bulkWrite(Stream* stream, const uint8_t *buffer, size_t size) {
-    File* asFile = (File*) stream;
+size_t bulkWrite(Stream *stream, const uint8_t *buffer, size_t size) {
+    File *asFile = (File *) stream;
     return asFile->write(buffer, size);
 }
 
 class PixelblazeSDBuffer : PixelblazeBuffer {
 public:
     PixelblazeSDBuffer(String &_root, bool (*_isTrash)(File)) {
+        if (!_root.endsWith("/")) {
+            _root = _root + "/";
+        }
+
         root = _root;
         isTrash = _isTrash;
     }
 
-    CloseableStream* makeWriteStream(String &bufferId, bool append) override {
+    CloseableStream *makeWriteStream(String &bufferId, bool append) override {
         String path = root + bufferId;
 
         //SD docs are unclear about whether FILE_WRITE will nuke existing, and code is convoluted enough that
@@ -31,7 +35,7 @@ public:
         return new CloseableStream(&f, bulkWrite, closeFileStream);
     }
 
-    CloseableStream* makeReadStream(String &bufferId) override {
+    CloseableStream *makeReadStream(String &bufferId) override {
         String path = root + bufferId;
         File f = SD.open(path, FILE_READ);
         return new CloseableStream(&f, bulkWrite, closeFileStream);
@@ -53,35 +57,29 @@ public:
             return;
         }
 
-        String rootWithSlash = root.endsWith("/") ? root : root + "/";
-        walkTree(rootDir, rootWithSlash);
-        rootDir.close();
-    }
-
-    //The tree should be very shallow, leaving this recursive for now
-    void walkTree(File &dir, String &fullPath) {
-        File file = dir.openNextFile();
+        File file = rootDir.openNextFile();
         while (file) {
             if (file.isDirectory()) {
-                walkTree(file, fullPath + file.name() + "/");
-            } else {
-                if (isTrash(file)) {
-                    String filePath = fullPath + file.name();
-                    file.close();
+                //Subdirs are unexpected, but we'll just log and move on
+                Serial.print("Unexpected dir in filing area: ");
+                Serial.print(root + file.name());
+            } else if (isTrash(file)) {
+                String filePath = root + file.name();
+                file.close();
 
-                    if (!SD.remove(filePath)) {
-                        Serial.print(F("Failed to remove file: "));
-                        Serial.println(filePath);
-                    }
-
-                    file = dir.openNextFile();
-                    continue;
+                if (!SD.remove(filePath)) {
+                    Serial.print(F("Failed to remove file: "));
+                    Serial.println(filePath);
                 }
-            }
 
-            file.close();
-            file = dir.openNextFile();
+                file = rootDir.openNextFile();
+            } else {
+                file.close();
+                file = rootDir.openNextFile();
+            }
         }
+
+        rootDir.close();
     }
 
 private:
