@@ -728,7 +728,42 @@ void PixelblazeClient::dispatchTextReply(ReplyHandler *genHandler) {
         }
         case HANDLER_PEERS: {
             auto *peerHandler = (PeersReplyHandler *) handler;
-            //TODO, and remember to bounds check against clientConfig.peerLimit
+            /*
+ * {
+    "peers": [
+        {
+            "id": 9173335,
+            "address": "192.168.1.107",
+            "name": "",
+            "ver": "",
+            "isFollowing": 0,
+            "nodeId": 0,
+            "followerCount": 0
+        },
+        ...
+    ]
+}
+ */
+            JsonArray peerArr = json["peers"];
+            size_t peersFound = 0;
+            for (JsonVariant v : peerArr) {
+                if (peersFound >= clientConfig.peerLimit) {
+                    break;
+                }
+
+                JsonObject peer = v.as<JsonObject>();
+                peers[peersFound].id = peer["id"];
+                peers[peersFound].address = peer["address"].as<String>();
+                peers[peersFound].name = peer["name"].as<String>();
+                peers[peersFound].version = peer["ver"].as<String>();
+                peers[peersFound].isFollowing = peer["isFollowing"];
+                peers[peersFound].nodeId = peer["nodeId"];
+                peers[peersFound].followerCount = peer["followerCount"];
+
+                peersFound++;
+            }
+
+            peerCount = peersFound;
             peerHandler->handle(peers, peerCount);
             break;
         }

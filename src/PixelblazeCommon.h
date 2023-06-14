@@ -76,7 +76,13 @@ struct Settings {
 };
 
 struct Peer {
-    //TODO
+    int id;
+    String address;
+    String name;
+    String version;
+    int isFollowing;
+    int nodeId;
+    size_t followerCount;
 };
 
 struct PlaylistItem {
