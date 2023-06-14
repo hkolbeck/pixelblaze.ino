@@ -10,19 +10,15 @@
  * #define WIFI_PW "hunter2"
  */
 #include "wifi_secrets.h"
+#include "../src/PixelblazeMemBuffer.h"
 
 // Change these as needed
 #define WEBSOCKET_HOST "192.168.4.1"
 #define WEBSOCKET_PORT 81
 
 /**
- * This should connect to a Pixelblaze controller and then scale the brightness up and down forever
+ * This should connect to a Pixelblaze controller and then smoothly scale the brightness up and down forever
  */
-
-class UnusedPBBuffer : public PixelblazeBuffer {
-
-};
-
 WiFiClient wifi;
 WebSocketClient wsClient = WebSocketClient(wifi, WEBSOCKET_HOST, WEBSOCKET_PORT);
 PixelblazeClient* pbClient = nullptr;
@@ -45,21 +41,26 @@ void setup() {
 
     Serial.println("Wifi connected!");
 
-    //Some reads involve buffering data across multiple messages
-    PixelblazeBuffer buffer = PixelblazeBuffer();
+    //Some reads involve buffering data across multiple messages. By default, this grabs 3 10kb buffers, but it can
+    //be tweaked. If significant issues arise, there's also an implementation using an attached SD card. Other mediums
+    //can be used by extending PixelblazeBuffer.
+    PixelblazeMemBuffer buffer = PixelblazeMemBuffer();
+
+    //Pixelblaze sends several message types unprompted, some of them ~100/s unless they're shut off. We're using a
+    //No-op implementation here, but it can be extended and handlers defined for any or all unprompted message types.
     PixelblazeUnrequestedHandler unrequestedHandler = PixelblazeUnrequestedHandler();
 
     pbClient = new PixelblazeClient(wsClient, buffer, unrequestedHandler);
+
+    if (!pbClient) {
+        Serial.println("Failed to create client.");
+        while (true) {}
+    }
 }
 
 int brightness = 50;
 int delta = 1;
 void loop() {
-    if (!pbClient) {
-        Serial.println("Failed to create client.");
-        while (true) {}
-    }
-
     while (!pbClient->connected()) {
         Serial.println("Connecting websocket client...");
         if (!pbClient->connectionMaintenance()) {

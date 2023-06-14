@@ -152,6 +152,7 @@ private:
             if (key.equals(thisBuffer->name)) {
                 thisBuffer->name = "";
                 thisBuffer->used = 0;
+                return;
             }
 
             buffIdx++;
