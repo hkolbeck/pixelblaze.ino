@@ -105,7 +105,7 @@ public:
  *
  * TODO: What happens if a pattern's code is edited?
  */
-class PixelblazeUnrequestedHandler {
+class PixelblazeWatcher {
 public:
     /**
      * Pixelblaze sends a stats packet once per second, all included info is repackaged into the provided struct.
@@ -144,8 +144,8 @@ public:
  */
 class PixelblazeClient {
 public:
-    PixelblazeClient(WebSocketClient &wsClient, PixelblazeBuffer &binaryBuffer,
-                     PixelblazeUnrequestedHandler &unrequestedHandler, ClientConfig &clientConfig = defaultConfig);
+    PixelblazeClient(WebSocketClient &wsClient, PixelblazeBuffer &streamBuffer,
+                     PixelblazeWatcher &watcher, ClientConfig clientConfig = defaultConfig);
 
     virtual ~PixelblazeClient();
 
@@ -533,9 +533,9 @@ private:
     static void noopExpander(ExpanderConfig &e) {};
 
 private:
-    WebSocketClient wsClient;
-    PixelblazeBuffer &binaryBuffer;
-    PixelblazeUnrequestedHandler unrequestedHandler;
+    WebSocketClient& wsClient;
+    PixelblazeBuffer& streamBuffer;
+    PixelblazeWatcher& watcher;
     ClientConfig clientConfig;
 
     ReplyHandler **replyQueue;

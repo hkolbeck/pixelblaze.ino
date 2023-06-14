@@ -47,7 +47,7 @@ void setup() {
 
     //Pixelblaze sends several message types unprompted, some of them ~100/s unless they're shut off. We're using a
     //No-op implementation here, but it can be extended and handlers defined for any or all unprompted message types.
-    PixelblazeUnrequestedHandler unrequestedHandler = PixelblazeUnrequestedHandler();
+    PixelblazeWatcher unrequestedHandler = PixelblazeWatcher();
 
     pbClient = new PixelblazeClient(wsClient, buffer, unrequestedHandler);
     pbClient->begin();

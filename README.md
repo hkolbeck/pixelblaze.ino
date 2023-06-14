@@ -31,10 +31,10 @@ void setup() {
     //We need somewhere to buffer relatively large partial reads, provided are in memory and SD card
     PixelblazeMemBuffer buffer = PixelblazeMemBuffer();
     
-    //To watch for a given event, override the appropriate method on PixelblazeUnrequestedHandler
-    PixelblazeUnrequestedHandler unrequestedHandler = PixelblazeUnrequestedHandler();
+    //To watch for a given event, override the appropriate method on PixelblazeWatcher
+    PixelblazeWatcher watcher = PixelblazeWatcher();
     
-    pbClient = new PixelblazeClient(wsClient, buffer, unrequestedHandler);
+    pbClient = new PixelblazeClient(wsClient, buffer, watcher);
     pbClient->begin();
 }
 

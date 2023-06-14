@@ -19,9 +19,9 @@
 /**
  * This is a definition of behavior to take when a pattern change is detected
  */
-class PatternChangeWatcher : public PixelblazeUnrequestedHandler {
+class PatternChangeWatcher : public PixelblazeWatcher {
 public:
-    PatternChangeWatcher() : PixelblazeUnrequestedHandler() {}
+    PatternChangeWatcher() : PixelblazeWatcher() {}
 
     void handlePatternChange(SequencerState &patternChange) override {
         Serial.print(F("Pattern change detected. New pattern: "));

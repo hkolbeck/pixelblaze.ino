@@ -20,9 +20,10 @@
 
 /**
  * Right now the Pixelblaze can play a playlist or shuffle everything, let's (awkwardly) shuffle a playlist!
- * */
+ *
+ */
 static size_t playlistLen = 0;
-class PlaylistChangeWatcher : public PixelblazeUnrequestedHandler {
+class PlaylistChangeWatcher : public PixelblazeWatcher {
 public:
     void handlePlaylistChange(PlaylistUpdate &playlistUpdate) override {
         playlistLen = playlistUpdate.numItems;

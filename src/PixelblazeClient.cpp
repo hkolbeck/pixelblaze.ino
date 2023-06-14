@@ -6,12 +6,12 @@
 #include <WebSocketClient.h>
 
 PixelblazeClient::PixelblazeClient(
-        WebSocketClient &_wsClient,
-        PixelblazeBuffer &_binaryBuffer,
-        PixelblazeUnrequestedHandler &_unrequestedHandler,
-        ClientConfig &_clientConfig) :
-        wsClient(_wsClient), binaryBuffer(_binaryBuffer),
-        unrequestedHandler(_unrequestedHandler), clientConfig(_clientConfig),
+        WebSocketClient &wsClient,
+        PixelblazeBuffer &streamBuffer,
+        PixelblazeWatcher &watcher,
+        ClientConfig clientConfig) :
+        wsClient(wsClient), streamBuffer(streamBuffer),
+        watcher(watcher), clientConfig(clientConfig),
         json(DynamicJsonDocument(clientConfig.jsonBufferBytes)) {
 
     byteBuffer = new uint8_t[clientConfig.binaryBufferBytes];
@@ -472,12 +472,12 @@ void PixelblazeClient::seekingBinaryHasBinary() {
                     dispatchBinaryReply(replyQueue[queueFront]);
                 }
                 if (replyQueue[queueFront]->shouldDeleteBuffer()) {
-                    binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
+                    streamBuffer.deleteStreamResults(binaryHandler->bufferId);
                 }
                 dequeueReply();
             } else if (frameFlag & FRAME_FIRST) {
                 if (!readBinaryToStream(binaryHandler, binaryHandler->bufferId, false)) {
-                    binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
+                    streamBuffer.deleteStreamResults(binaryHandler->bufferId);
                     dequeueReply();
                     return;
                 }
@@ -501,12 +501,12 @@ void PixelblazeClient::seekingBinaryHasBinary() {
             }
 
             if (replyQueue[queueFront]->shouldDeleteBuffer()) {
-                binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
+                streamBuffer.deleteStreamResults(binaryHandler->bufferId);
             }
             dequeueReply();
         } else if (frameFlag & FRAME_MIDDLE) {
             if (!readBinaryToStream(binaryHandler, binaryHandler->bufferId, true)) {
-                binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
+                streamBuffer.deleteStreamResults(binaryHandler->bufferId);
                 dequeueReply();
                 return;
             }
@@ -527,7 +527,7 @@ void PixelblazeClient::seekingBinaryHasBinary() {
 
             //Scrap the current read, if the finisher never comes it would drop requested events until weeded
             binaryHandler->replyFailed(FAILED_MULTIPART_READ_INTERRUPTED);
-            binaryBuffer.deleteStreamResults(binaryHandler->bufferId);
+            streamBuffer.deleteStreamResults(binaryHandler->bufferId);
             dequeueReply();
             binaryReadType = -1;
         }
@@ -545,11 +545,11 @@ void PixelblazeClient::seekingBinaryHasText() {
 }
 
 bool PixelblazeClient::readBinaryToStream(ReplyHandler *handler, String &bufferId, bool append) {
-    CloseableStream *stream = binaryBuffer.makeWriteStream(bufferId, append);
+    CloseableStream *stream = streamBuffer.makeWriteStream(bufferId, append);
     if (!stream) {
         Serial.println(F("Couldn't open write stream, attempting to garbage collect"));
-        binaryBuffer.garbageCollect();
-        stream = binaryBuffer.makeWriteStream(bufferId, append);
+        streamBuffer.garbageCollect();
+        stream = streamBuffer.makeWriteStream(bufferId, append);
     }
 
     if (!stream) {
@@ -720,7 +720,7 @@ void PixelblazeClient::dispatchBinaryReply(ReplyHandler *handler) {
         binHandler = (BinaryReplyHandler *) handler;
     }
 
-    auto stream = binaryBuffer.makeReadStream(binHandler->bufferId);
+    auto stream = streamBuffer.makeReadStream(binHandler->bufferId);
     if (!stream) {
         Serial.print(F("Couldn't open read string for bufferId: "));
         Serial.println(binHandler->bufferId);
@@ -834,14 +834,14 @@ void PixelblazeClient::handleUnrequestedJson() {
         statsEvent.rr1 = json["rr1"];
         statsEvent.rebootCounter = json["rebootCounter"];
 
-        unrequestedHandler.handleStats(statsEvent);
+        watcher.handleStats(statsEvent);
     } else if (json.containsKey("activeProgram")) {
         //This is also sent as part of the response to getConfig
         parseSequencerState();
-        unrequestedHandler.handlePatternChange(sequencerState);
+        watcher.handlePatternChange(sequencerState);
     } else if (json.containsKey("playlist")) {
         //TODO
-        //unrequestedHandler.handlePlaylistChange()
+        //watcher.handlePlaylistChange()
     }
 }
 
@@ -849,7 +849,7 @@ bool PixelblazeClient::handleUnrequestedBinary(int frameType) {
     if (frameType == BIN_TYPE_PREVIEW_FRAME) {
         int frameSize = wsClient.read(byteBuffer,
                                       min(wsClient.available(), clientConfig.binaryBufferBytes));
-        unrequestedHandler.handlePreviewFrame(byteBuffer, frameSize);
+        watcher.handlePreviewFrame(byteBuffer, frameSize);
         return true;
     } else if (frameType == BIN_TYPE_EXPANDER_CONFIG) {
         // Expander configs can come in out of order, check if one has been requested
