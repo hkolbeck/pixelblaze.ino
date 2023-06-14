@@ -73,18 +73,21 @@ void setup() {
     pbClient->begin();
 
     // Fetch a value and store it elsewhere. On non-AVR boards this can now use closures!
-    pbClient->getPlaylist(extractPlaylistLen) || Serial.printlin(F("Get playlist failed to dispatch"));
+    pbClient->getPlaylist(extractPlaylistLen) 
+        || Serial.printlin(F("Get playlist failed to dispatch"));
     
     // Make sure we're using a paused playlist
-    pbClient->setSequencerMode(SEQ_MODE_PLAYLIST) || Serial.printlin(F("Set sequencer mode failed to dispatch"));
-    pbClient->pauseSequence() || Serial.printlin(F("Pause failed to dispatch"));
+    pbClient->setSequencerMode(SEQ_MODE_PLAYLIST) 
+        || Serial.printlin(F("Set sequencer mode failed to dispatch"));
+    pbClient->pauseSequence() 
+        || Serial.printlin(F("Pause failed to dispatch"));
 }
 
 uint32_t lastShuffle = millis();
 void loop() {
-    // The heart of the library's operation. Must be called a few times a second at least if the attached
-    // Pixelblaze is sending frame previews. Otherwise the more often the better, if there's nothing to do it will
-    // return almost immediately
+    // The heart of the library's operation. Must be called a few times a second at least 
+    // if the attached Pixelblaze is sending frame previews. Otherwise the more often the 
+    // better, if there's nothing to do it will return almost immediately
     pbClient->checkForInbound();
     
     if (playlistLen > 0 && millis() - lastShuffle > PLAYLIST_DURATION_MS) {
