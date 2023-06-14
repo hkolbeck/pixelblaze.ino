@@ -57,8 +57,7 @@ void setup() {
     //can be used by extending PixelblazeBuffer.
     PixelblazeMemBuffer buffer = PixelblazeMemBuffer();
 
-    //Pixelblaze sends several message types unprompted, some of them ~100/s unless they're shut off. We're using a
-    //No-op implementation here, but it can be extended and handlers defined for any or all unprompted message types.
+    //Pixelblaze sends several message types unprompted, we're watching for active pattern changes
     PatternChangeWatcher unrequestedHandler = PatternChangeWatcher();
 
     pbClient = new PixelblazeClient(wsClient, buffer, unrequestedHandler);
