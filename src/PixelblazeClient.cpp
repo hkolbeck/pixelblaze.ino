@@ -1015,7 +1015,7 @@ void PixelblazeClient::handleUnrequestedJson() {
 bool PixelblazeClient::handleUnrequestedBinary(int frameType) {
     if (frameType == (int) BinaryMsgType::PreviewFrame) {
         int frameSize = wsClient.read(byteBuffer,
-                                      min(wsClient.available(), clientConfig.binaryBufferBytes));
+                                      min(wsClient.available(), (int) clientConfig.binaryBufferBytes));
         watcher.handlePreviewFrame(byteBuffer, frameSize);
         return true;
     } else if (frameType == (int) BinaryMsgType::ExpanderChannels) {
