@@ -1089,7 +1089,6 @@ bool PixelblazeClient::enqueueReplies(int num, ...) {
             replyQueue[queueBack] = handler;
             queueBack = (queueBack + 1) % clientConfig.replyQueueSize;
         } else if (handler) {
-            handler->cleanup();
             delete handler;
         }
     }
@@ -1104,7 +1103,6 @@ void PixelblazeClient::dequeueReply() {
         return;
     }
 
-    replyQueue[queueFront]->cleanup();
     delete replyQueue[queueFront];
     replyQueue[queueFront] = nullptr;
     queueFront = (queueFront + 1) % clientConfig.replyQueueSize;
@@ -1123,7 +1121,6 @@ void PixelblazeClient::compactQueue() {
     if (toKeep == 0) {
         for (size_t idx = 0; idx < clientConfig.replyQueueSize; idx++) {
             if (replyQueue[idx]) {
-                replyQueue[idx]->cleanup();
                 delete replyQueue[idx];
                 replyQueue[idx] = nullptr;
             }

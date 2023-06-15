@@ -32,8 +32,6 @@ public:
         return false;
     };
 
-    virtual bool cleanup() {}
-
     virtual void reportFailure(FailureCause cause) {}
 
     virtual bool isSatisfied() {
