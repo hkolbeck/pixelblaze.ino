@@ -4,7 +4,7 @@
 
 #include <ArduinoJson.h>
 #include <WebSocketClient.h>
-#include "BufferUtils/BufferReader.h"
+#include <BufferReader.h>
 
 PixelblazeClient::PixelblazeClient(
         WebSocketClient &wsClient,
