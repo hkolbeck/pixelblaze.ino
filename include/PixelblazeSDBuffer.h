@@ -22,12 +22,20 @@ public:
         //SD docs are unclear about whether FILE_WRITE will nuke existing, and code is convoluted enough that
         //finding the impl being called eludes me. If it doesn't we'll have to nuke manually.
         File f = SD.open(path, append ? O_APPEND : O_WRITE);
+        if (!f) {
+            return nullptr;
+        }
+
         return new CloseableStream(&f, bulkWrite, closeFileStream);
     }
 
     CloseableStream *makeReadStream(String &bufferId) override {
         String path = root + bufferId;
         File f = SD.open(path, FILE_READ);
+        if (!f) {
+            return nullptr;
+        }
+
         return new CloseableStream(&f, bulkWrite, closeFileStream);
     }
 
@@ -61,12 +69,11 @@ public:
                     Serial.print(F("Failed to remove file: "));
                     Serial.println(filePath);
                 }
-
-                file = rootDir.openNextFile();
             } else {
                 file.close();
-                file = rootDir.openNextFile();
             }
+
+            file = rootDir.openNextFile();
         }
 
         rootDir.close();
