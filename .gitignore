@@ -1,3 +1,5 @@
+.idea/
+.pio/
 cmake-build-debug/
-
+cmake-build-*/
 wifi_secrets.h
