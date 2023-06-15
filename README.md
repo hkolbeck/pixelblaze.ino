@@ -87,8 +87,12 @@ uint32_t lastShuffle = millis();
 void loop() {
     // The heart of the library's operation. Must be called a few times a second at least 
     // if the attached Pixelblaze is sending frame previews. Otherwise the more often the 
-    // better, if there's nothing to do it will return almost immediately
-    pbClient->checkForInbound();
+    // better, if there's nothing to do it will return almost immediately.
+    // If it returns false, its connection died and was not re-openable, it will try some
+    // more the next time checkForInbound() is called.
+    if (pbClient->checkForInbound()) {
+        Serial.println("Websocket connection failed and couldn't be recovered");
+    }
     
     if (playlistLen > 0 && millis() - lastShuffle > PLAYLIST_DURATION_MS) {
         pbClient->setPlaylistIndex(random(0, playlistLen));
