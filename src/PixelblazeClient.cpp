@@ -45,6 +45,7 @@ PixelblazeClient::~PixelblazeClient() {
 }
 
 bool PixelblazeClient::begin() {
+    Serial.println("Attempting to connect to Pixelblaze websocket");
     return wsClient.begin("/") == 0;
 }
 
@@ -426,7 +427,7 @@ bool PixelblazeClient::rawRequest(RawTextHandler &replyHandler, int rawBinType, 
     return sendBinary(rawBinType, request);
 }
 
-void PixelblazeClient::checkForInbound() {
+bool PixelblazeClient::checkForInbound() {
     if (!connected()) {
         Serial.print(F("Connection to Pixelblaze lost, dropping pending handlers: "));
         Serial.println(queueLength());
@@ -435,7 +436,7 @@ void PixelblazeClient::checkForInbound() {
 
     if (!connectionMaintenance()) {
         Serial.println(F("Couldn't reconnect to Pixelblaze websocket, bailing from checkForInbound()"));
-        return;
+        return false;
     }
 
 //    if (millis() - lastPingAtMs > clientConfig.sendPingEveryMs) {
@@ -523,6 +524,8 @@ void PixelblazeClient::checkForInbound() {
 
         read = wsClient.parseMessage();
     }
+
+    return true;
 }
 
 /////////////////////////////

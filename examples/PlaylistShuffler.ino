@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
-#include "../src/PixelblazeClient.h"
-#include "../src/PixelblazeMemBuffer.h"
+#include "PixelblazeClient.h"
+#include "PixelblazeMemBuffer.h"
 
 /**
  * Expected format:

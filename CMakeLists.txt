@@ -1,48 +1,33 @@
-cmake_minimum_required(VERSION 3.0.0)
-set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/cmake/ArduinoToolchain.cmake)
-set(CMAKE_CXX_STANDARD 14)
-set(PROJECT_NAME pixelblaze_client)
+# !!! WARNING !!! AUTO-GENERATED FILE, PLEASE DO NOT MODIFY IT AND USE
+# https://docs.platformio.org/page/projectconf/section_env_build.html#build-flags
+#
+# If you need to override existing CMake configuration or add extra,
+# please create `CMakeListsUser.txt` in the root of project.
+# The `CMakeListsUser.txt` will not be overwritten by PlatformIO.
 
-set(${PROJECT_NAME}_BOARD uno)
-# set(ARDUINO_CPU)
-project(${PROJECT_NAME})
+cmake_minimum_required(VERSION 3.13)
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_C_COMPILER_WORKS 1)
+set(CMAKE_CXX_COMPILER_WORKS 1)
 
-# Define additional source and header files or default arduino sketch files
-# These files are now added to the sketch file, if the sketch is defined.
-set(${PROJECT_NAME}_SRCS src/PixelblazeClient.cpp)
-set(${PROJECT_NAME}_HDRS src/PixelblazeClient.h src/PixelblazeHandlers.h src/PixelblazeSDBuffer.h)
+project("pixelblaze-client" C CXX)
 
-include_directories(lib)
-### Additional static libraries to include in the target.
-# set(${PROJECT_NAME}_LIBS)
+include(CMakeListsPrivate.txt)
 
-### Main sketch file
-set(${PROJECT_NAME}_SKETCH examples/CyclicalFade.ino)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/CMakeListsUser.txt)
+include(CMakeListsUser.txt)
+endif()
 
-### Add project directories into the build
-#add_subdirectory()
+add_custom_target(
+    Production ALL
+    COMMAND platformio -c clion run "$<$<NOT:$<CONFIG:All>>:-e${CMAKE_BUILD_TYPE}>"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
-### Additional settings to add non-standard or your own Arduino libraries.
-# For this example (libs will contain additional arduino libraries)
-# An Arduino library my_lib will contain files in libs/my_lib/: my_lib.h, my_lib.cpp + any other cpp files
-# link_directories(${CMAKE_CURRENT_SOURCE_DIR}/)
+add_custom_target(
+    Debug ALL
+    COMMAND platformio -c clion debug "$<$<NOT:$<CONFIG:All>>:-e${CMAKE_BUILD_TYPE}>"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
-# This is no longer need but left in for those occasions where automatics do not work out. 
-# Current Arduino.cmake will recurse into any libraries which contain source files in src/ subdirectory. 
-# Files in subdirectories whose name starts with cmake-build or examples are excluded
-# For nested library sources replace ${LIB_NAME} with library name for each library
-# set(_RECURSE true)
-
-#### Additional settings for programmer. From programmers.txt
-# set(${PROJECT_NAME}_PROGRAMMER avrispmkii)
-# set(${PROJECT_NAME}_PORT /dev/cu.usbserial-00000000)
-# set(uno.upload.speed 9600)
-
-## Verbose build process
-# set(${PROJECT_NAME}_AFLAGS -v)
-
-generate_arduino_firmware(${PROJECT_NAME})
-
-
-print_board_list()
-print_programmer_list()
+add_executable(Z_DUMMY_TARGET ${SRC_LIST})

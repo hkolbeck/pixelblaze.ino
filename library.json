@@ -1,0 +1,29 @@
+{
+  "name": "pixelblaze_client",
+  "version": "0.0.1",
+  "description": "A client for the Pixelblaze LED controller's API",
+  "keywords": "led, lights, client",
+  "repository":
+  {
+    "type": "git",
+    "url": "https://github.com/hkolbeck/pixelblaze.ino"
+  },
+  "authors":
+  [
+    {
+      "name": "Hannah Kolbeck",
+      "email": "hello@hannah.industries",
+      "url": "https://hannah.industries",
+      "maintainer": true
+    }
+  ],
+  "license": "GPL 3.0",
+  "homepage": "https://electromage.com",
+  "dependencies": {
+    "arduino-libraries/ArduinoHttpClient": "0.4.0",
+    "bblanchon/ArduinoJson": "^6.21.2",
+    "bakercp/BufferUtils": "^3.0.0"
+  },
+  "frameworks": "*",
+  "platforms": "Arduino"
+}
