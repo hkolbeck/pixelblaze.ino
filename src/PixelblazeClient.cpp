@@ -682,7 +682,7 @@ bool PixelblazeClient::readBinaryToStream(ReplyHandler *handler, String &bufferI
 
     int available = wsClient.available();
     while (available > 0) {
-        int bytesRead = wsClient.read(byteBuffer, min(clientConfig.binaryBufferBytes, available));
+        int bytesRead = wsClient.read(byteBuffer, min((int) clientConfig.binaryBufferBytes, available));
         size_t written = stream->write(byteBuffer, bytesRead);
         if (bytesRead != written) {
             Serial.print(F("Partial write on stream for bufferId: "));
