@@ -53,20 +53,20 @@ void setup() {
     pbClient->begin();
 }
 
-int brightness = 50;
-int delta = 1;
+float brightness = 0.5;
+float delta = 0.01;
 void loop() {
     //We're discarding everything coming in, but still better to trim it as it comes in
     //This is also where we do some maintenance on the connection if there are issues
     pbClient->checkForInbound();
 
     brightness += delta;
-    if (brightness > 100) {
-        brightness = 99;
-        delta = -1;
+    if (brightness > 1) {
+        brightness = 0.99;
+        delta = -0.01;
     } else if (brightness < 0) {
-        brightness = 1;
-        delta = 1;
+        brightness = 0.01;
+        delta = 0.01;
     } else {
         brightness += delta;
     }
