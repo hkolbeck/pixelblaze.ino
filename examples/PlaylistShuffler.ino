@@ -64,7 +64,7 @@ void setup() {
 
 uint32_t lastShuffle = millis();
 void loop() {
-    if (pbClient->checkForInbound()) {
+    if (!pbClient->checkForInbound()) {
         Serial.println("Websocket connection failed and couldn't be recovered");
     }
 

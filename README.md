@@ -90,7 +90,7 @@ void loop() {
     // better, if there's nothing to do it will return almost immediately.
     // If it returns false, its connection died and was not re-openable, it will try some
     // more the next time checkForInbound() is called.
-    if (pbClient->checkForInbound()) {
+    if (!pbClient->checkForInbound()) {
         Serial.println("Websocket connection failed and couldn't be recovered");
     }
     

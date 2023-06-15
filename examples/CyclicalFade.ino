@@ -58,7 +58,7 @@ float delta = 0.01;
 void loop() {
     //We're discarding everything coming in, but still better to trim it as it comes in
     //This is also where we do some maintenance on the connection if there are issues
-    if (pbClient->checkForInbound()) {
+    if (!pbClient->checkForInbound()) {
         Serial.println("Websocket connection failed and couldn't be recovered");
     }
 

@@ -65,7 +65,7 @@ void setup() {
 }
 
 void loop() {
-    if (pbClient->checkForInbound()) {
+    if (!pbClient->checkForInbound()) {
         Serial.println("Websocket connection failed and couldn't be recovered");
     }
     delay(100);
