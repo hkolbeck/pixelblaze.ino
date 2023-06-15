@@ -1,10 +1,14 @@
 #ifndef PixelblazeClient_h
 #define PixelblazeClient_h
 
-#include "PixelblazeHandlers.h"
-
 #include <ArduinoHttpClient.h>
 #include <ArduinoJson.h>
+
+#include "PixelblazeHandlers.h"
+#include "PixelblazeCommon.h"
+
+static String defaultPlaylist = String("_defaultplaylist_");
+static ClientConfig defaultConfig = {};
 
 /**
  * A client for the Pixelblaze LED controller's websocket API
@@ -18,131 +22,11 @@
  * asynchronously, and so requires providing a handler for the eventual result. In general this will look like extending
  * an indicated class and defining a handle() function.
  *
+ * NOT THREADSAFE. DO NOT SHARE INSTANCES.
+ *
  * TODO: This library implements only a subset of the functions supported by the websocket API, though they are the
  * TODO: primary functions for everyday usage. If there's a need for scaling out that set we'll burn that bridge
  * TODO: when we come to it.
- */
-
-// Flags used to indicate a binary message's position in a message series
-#define FRAME_FIRST 1
-#define FRAME_MIDDLE 2
-#define FRAME_LAST 4
-
-// Flags to indicate the sequencer mode
-#define SEQ_MODE_OFF 0
-#define SEQ_MODE_SHUFFLE_ALL 1
-#define SEQ_MODE_PLAYLIST 2
-
-// Flags to indicate what elements of the reply you care about in getSystemState(). Bitwise-OR them to select a subset
-// By default only the config and sequencer replies are tracked
-#define WATCH_SETTING_REQ 1
-#define WATCH_SEQ_REQ 2
-#define WATCH_EXPANDER_REQ 4
-
-static String defaultPlaylist = String("_defaultplaylist_");
-static ClientConfig defaultConfig = {};
-
-/**
- * Some reads involve buffering data across multiple messages. Implementations are available for using local memory
- * and an attached SD card. Others can be implemented as needed. Using this base implementation will function,
- * but no result will ever be returned for the following operations:
- *  - getPatterns()
- *  - getPreviewImage()
- *  - getSystemState() (Settings and sequencer state will be processed, expander config won't)
- *  - rawRequest()
- *
- * Because data can be split across multiple messages, we frequently need to re-open a write stream and append data,
- * then eventually open the completed buffer for reading. This means that close()-ing and free()-ing the returned
- * CloseableStreams does not clean up the buffered data, only deleteStreamResults() does.
- *
- * If the system attempts to allocate a buffer and fails, it will call garbageCollect() and then make another attempt
- * before discarding the enqueued request handler. If this happens it will call requestHandler.replyFailed(errorCode).
- * Codes are defined in PixelblazeHandlers.h
- *
- * Note that PixelblazeBuffer implementations are not responsible for managing memory around CloseableStreams, that's
- * handled in the client.
- */
-class PixelblazeBuffer {
-public:
-    /**
-     * Get a stream writing to a named buffer
-     *
-     * @param key the name of the buffer
-     * @param append If true, writes will be added to the end of any existing data, otherwise existing buffer contents
-     *               will be overwritten.
-     * @return A CloseableStream pointer if a buffer was available, or nullptr otherwise
-     */
-    virtual CloseableStream *makeWriteStream(String &key, bool append) {
-        return nullptr;
-    };
-
-    /**
-     * Get a stream reading from a named buffer
-     *
-     * @param key the name of the buffer
-     * @return A CloseableStream pointer if a buffer was available, or nullptr otherwise
-     */
-    virtual CloseableStream *makeReadStream(String &key) {
-        return nullptr;
-    };
-
-    /**
-     * Delete any stored state for a given buffer
-     * @param key the name of the buffer
-     */
-    virtual void deleteStreamResults(String &key) {};
-
-    /**
-     * Attempts to release any resources where possible to allow more write streams to be returned. Only called if
-     * makeWriteStream() fails.
-     */
-    virtual void garbageCollect() {};
-};
-
-/**
- * Pixelblaze sends several message types unprompted, some of them ~100/s unless they're shut off. Extend this class
- * and implement any or all methods to handle those unprompted messages, otherwise they're dropped.
- *
- * TODO: What happens if a pattern's code is edited?
- */
-class PixelblazeWatcher {
-public:
-    /**
-     * Pixelblaze sends a stats packet once per second, all included info is repackaged into the provided struct.
-     * Note that the provided stats object is no longer valid after this returns.
-     */
-    virtual void handleStats(Stats &stats) {};
-
-    /**
-     * Pixelblaze sends a packet every time the active pattern changes.
-     */
-    virtual void handlePatternChange(SequencerState &patternChange) {};
-
-    /**
-     * Every time Pixelblaze completes a render cycle it can ship a binary representation of a possibly cross-fuzzed
-     * view of the entire strip up to 1024 (r,g,b) pixels where each channel is aa byte.
-     * Preview frames can be enabled/disabled by calling sendFramePreviews(bool). It's unclear what the default is.
-     * TODO: If the default is to send em, do we flip that? It looks like the web re-enables them every time the
-     * TODO: pattern changes.
-     *
-     * @param previewPixelRGB Packed RGB data, with the first pixel r = preview[0], g = preview[1], b = preview[2]
-     * @param len the length of the preview buffer in bytes.
-     */
-    virtual void handlePreviewFrame(uint8_t *previewPixelRGB, size_t len) {};
-
-    /**
-     * TODO: Currently not dispatched
-     *
-     * Every time a pattern is added or removed from the active playlist, a copy of that playlist is sent back to
-     * connected clients.
-     */
-    virtual void handlePlaylistChange(PlaylistUpdate &playlistUpdate) {};
-};
-
-/**
- * The client class.
- *
- * NOT THREADSAFE. DO NOT SHARE INSTANCES.
  */
 class PixelblazeClient {
 public:
@@ -201,7 +85,7 @@ public:
      * @param replyHandler handler will receive an iterator of the (id, name) pairs of all patterns on the device
      * @return true if the request was dispatched, false otherwise
      */
-    bool getPatterns(void (*handler)(AllPatternIterator &), void (*onError)(int) = ignoreError);
+    bool getPatterns(void (*handler)(AllPatternIterator &), void (*onError)(FailureCause) = logError);
 
     /**
      * Get the contents of a playlist, along with some metadata about it and its current state
@@ -210,7 +94,8 @@ public:
      * @param playlistName The playlist to fetch, presently only the default is supported
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPlaylist(void (*handler)(Playlist &), String &playlistName = defaultPlaylist, void (*onError)(int) = ignoreError);
+    bool getPlaylist(void (*handler)(Playlist &), String &playlistName = defaultPlaylist,
+                     void (*onError)(FailureCause) = logError);
 
     /**
      * Get the index on the playlist of the current pattern
@@ -218,7 +103,7 @@ public:
      * @param replyHandler handler will receive an int indicating the 0-based index
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPlaylistIndex(void (*handler)(size_t), void (*onError)(int) = ignoreError);
+    bool getPlaylistIndex(void (*handler)(size_t), void (*onError)(FailureCause) = logError);
 
     /**
      * Set the current pattern by its index on the active playlist
@@ -265,14 +150,14 @@ public:
      *
      * @return true if the request was dispatched, false otherwise.
      */
-    bool setSequencerMode(int sequencerMode);
+    bool setSequencerMode(SequencerMode sequencerMode);
 
     /**
      * TODO: Not yet implemented
      *
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPeers(void (*handler)(Peer *, size_t), void (*onError)(int) = ignoreError);
+    bool getPeers(void (*handler)(Peer *, size_t), void (*onError)(FailureCause) = logError);
 
     /**
      * Set the active brightness
@@ -312,7 +197,7 @@ public:
      * @param replyHandler Handler that will receive an array of Controls and the patternId they're for
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getCurrentPatternControls(void (*handler)(Control*, size_t), void (*onError)(int) = ignoreError);
+    bool getCurrentPatternControls(void (*handler)(Control *, size_t), void (*onError)(FailureCause) = logError);
 
     /**
      * Get controls for a specific pattern
@@ -321,7 +206,8 @@ public:
      * @param replyHandler the handler that will receive those controls
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPatternControls(String &patternId, void (*handler)(String &, Control *, size_t), void (*onError)(int) = ignoreError);
+    bool getPatternControls(String &patternId, void (*handler)(String &, Control *, size_t),
+                            void (*onError)(FailureCause) = logError);
 
     /**
      * Gets a preview image for a specified pattern. The returned stream is a 100px wide by 150px tall 8-bit JPEG image.
@@ -331,19 +217,18 @@ public:
      * @param replyHandler handler to ingest the image stream
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getPreviewImage(String &patternId, void (*handlerFn)(String &, CloseableStream *), bool clean = true, void (*onError)(int) = ignoreError);
+    bool getPreviewImage(String &patternId, void (*handlerFn)(String &, CloseableStream *),
+                         bool clean = true, void (*onError)(FailureCause) = logError);
 
     /**
      * Set the global brightness limit
      *
-     * TODO: Do we hide the fact that the API disagrees on format for the brightness slider vs global?
-     *
-     * @param value clamped to [0, 100]
+     * @param value clamped to [0, 1]
      * @param saveToFlash whether to persist the value through restarts. While you can send these at high volume
      *                    for smooth dimming, only save when the value settles.
      * @return true if the request was dispatched, false otherwise.
      */
-    bool setBrightnessLimit(int value, bool saveToFlash);
+    bool setBrightnessLimit(float value, bool saveToFlash);
 
     /**
      * Set the number of pixels controlled
@@ -365,29 +250,29 @@ public:
      *  - Expander Channel Configuration:
      *      The configuration of the output expander if any.
      *
-     *  IN NEED OF HELP: I don't have a system with an output expander to look at what exactly the traffic looks like
-     *
      * Because you frequently only care about one of the three, you can specify which responses to actually watch for.
      * Set the watchResponses arg to a bitwise-OR'd combination of:
-     *   WATCH_SETTING_REQ
-     *   WATCH_SEQ_REQ
-     *   WATCH_EXPANDER_REQ
-     * Note that the default drops WATCH_EXPANDER_REQ, as they can come in out-of-order and cause issues
+     *   (int) SettingReply::Settings
+     *   (int) SettingReply::Sequencer
+     *   (int) SettingReply::Expander
+     * Note that the default drops SettingReply::Expander, as they can come in out-of-order and cause issues
      *
      * Note that because the sequencer message is identical to the pattern change message, it may get picked up by
      * the unrequested message handler even if it's ignored here.
      *
-     * @param settingsHandler handler for the settings response, use NoopSettingsReplyHandler if ignoring
-     * @param seqHandler handler for the sequencer response, use NoopSequencerReplyHandler if ignoring
+     * @param settingsHandler handler for the settings response, ignore with noopSettings
+     * @param seqHandler handler for the sequencer response, ignore with noopSequencer
+     * @param expanderHandler handler for the expander channel response
+     * @param rawWatchReplies OR'd  together
      *
      * @return true if the request was dispatched, false otherwise.
      */
     bool getSystemState(
             void (*settingsHandler)(Settings &),
             void (*seqHandler)(SequencerState &),
-            void (*expanderHandler)(ExpanderChannel*, size_t),
-            int watchResponses = WATCH_SETTING_REQ | WATCH_SEQ_REQ,
-            void (*onError)(int) = ignoreError);
+            void (*expanderHandler)(ExpanderChannel *, size_t),
+            int rawWatchReplies = (int) SettingReply::Settings | (int) SettingReply::Sequencer,
+            void (*onError)(FailureCause) = logError);
 
     /**
      * Utility wrapper around getSystemState()
@@ -395,7 +280,7 @@ public:
      * @param settingsHandler handler for the non-ignored response
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getSettings(void (*settingsHandler)(Settings &), void (*onError)(int) = ignoreError);
+    bool getSettings(void (*settingsHandler)(Settings &), void (*onError)(FailureCause) = logError);
 
     /**
      * Utility wrapper around getSystemState()
@@ -403,7 +288,7 @@ public:
      * @param seqHandler handler for the non-ignored response
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getSequencerState(void (*seqHandler)(SequencerState &), void (*onError)(int) = ignoreError);
+    bool getSequencerState(void (*seqHandler)(SequencerState &), void (*onError)(FailureCause) = logError);
 
     /**
      * Utility wrapper around getSystemState()
@@ -411,7 +296,7 @@ public:
      * @param expanderHandler handler for the non-ignored response
      * @return true if the request was dispatched, false otherwise.
      */
-    bool getExpanderConfig(void (*expanderHandler)(ExpanderChannel*, size_t), void (*onError)(int) = ignoreError);
+    bool getExpanderConfig(void (*expanderHandler)(ExpanderChannel *, size_t), void (*onError)(FailureCause) = logError);
 
     /**
      * Send a ping to the controller
@@ -422,7 +307,7 @@ public:
      * @param replyHandler handler will receive the approximate round trip time
      * @return true if the request was dispatched, false otherwise.
      */
-    bool ping(void (*handler)(uint32_t), void (*onError)(int) = ignoreError);
+    bool ping(void (*handler)(uint32_t), void (*onError)(FailureCause) = logError);
 
     /**
      * Specify whether the controller should send a preview of each render cycle. If sent they're handled in the
@@ -459,10 +344,11 @@ public:
      * Note that the maximum chunk size is bounded by binaryBufferBytes
      *
      * @param replyHandler handler to deal with the resulting message
+     * @param rawRequestBinType the raw BinaryMsgType of the outbound request
      * @param request Binary stream to send to the backend
      * @return true if the request was dispatched, false otherwise.
      */
-    bool rawRequest(RawBinaryHandler &replyHandler, int binType, Stream &request);
+    bool rawRequest(RawBinaryHandler &replyHandler, int rawRequestBinType, Stream &request);
 
     /**
      * Utility function for interacting with the backend in arbitrary ways if they're not implemented in this library
@@ -470,18 +356,21 @@ public:
      * Note that the maximum chunk size is bounded by binaryBufferBytes
      *
      * @param replyHandler handler to deal with the resulting message
+     * @param rawBinType the raw BinaryMsgType of the outbound request
      * @param request Binary stream to send to the backend
      * @return true if the request was dispatched, false otherwise.
      */
-    bool rawRequest(RawTextHandler &replyHandler, int binType, Stream &request);
+    bool rawRequest(RawTextHandler &replyHandler, int rawBinType, Stream &request);
 
     /**
      * Default handler for reply error reporting. Error codes are represented by the FAILURE_
      * #defines in PixelblazeHandlers.h
      *
-     * @param errorCode A code indicating rough failure reasons
+     * @param failureCause A code indicating rough failure reasons
      */
-    static void ignoreError(int ignored) {
+    static void logError(FailureCause failureCause) {
+        Serial.print("Request failed with error code: ");
+        Serial.println((int) failureCause);
     }
 
     /**
@@ -493,8 +382,14 @@ public:
      * @param maxWords How many words to split it into max. humanizeVarName("sliderThinkLOLIDK", 2) => "Think LOLIDK"
      * @return The humanized variable name
      */
-    static String humanizeVarName(String &camelCaseVar, int maxWords = 10);
+    static String humanizeVarName(String &camelCaseVar, int maxWords = 4);
 
+    /**
+     * Utility functions for dropping responses from getSystemState
+     */
+    static void noopSettings(Settings &s) {};
+    static void noopSequencer(SequencerState &s) {};
+    static void noopExpander(ExpanderChannel *e, size_t c) {};
 private:
     bool connectionMaintenance();
 
@@ -518,7 +413,7 @@ private:
 
     void handleUnrequestedJson();
 
-    bool handleUnrequestedBinary(int frameType);
+    bool handleUnrequestedBinary(int rawBinaryType);
 
     bool enqueueReply(ReplyHandler *handler);
 
@@ -528,26 +423,20 @@ private:
 
     void compactQueue();
 
-    void evictQueue(int reason);
+    void evictQueue(FailureCause cause);
 
     void parseSequencerState();
 
     bool sendJson(JsonDocument &doc);
 
-    bool sendBinary(int binType, Stream &stream);
+    bool sendBinary(int rawBinType, Stream &stream);
 
-    String* getColorOrder(uint8_t code);
-
-    static void noopSettings(Settings &s) {};
-
-    static void noopSequencer(SequencerState &s) {};
-
-    static void noopExpander(ExpanderChannel* e, size_t c) {};
+    static String *getColorOrder(uint8_t code);
 
 private:
-    WebSocketClient& wsClient;
-    PixelblazeBuffer& streamBuffer;
-    PixelblazeWatcher& watcher;
+    WebSocketClient &wsClient;
+    PixelblazeBuffer &streamBuffer;
+    PixelblazeWatcher &watcher;
     ClientConfig clientConfig;
 
     ReplyHandler **replyQueue;
@@ -560,7 +449,7 @@ private:
     Playlist playlist;
     PlaylistUpdate playlistUpdate;
 
-    ExpanderChannel* expanderChannels;
+    ExpanderChannel *expanderChannels;
     size_t numExpanderChannels = 0;
     Peer *peers;
     size_t peerCount = 0;
@@ -571,7 +460,7 @@ private:
     char *textReadBuffer;
     DynamicJsonDocument json;
 
-    int binaryReadType = -1;
+    int rawBinaryReadType = -1;
 
     uint32_t lastPingAtMs = 0;
     uint32_t lastSuccessfulPingAtMs = 0;

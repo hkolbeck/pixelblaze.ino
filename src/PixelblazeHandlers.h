@@ -7,22 +7,6 @@
 #include "PixelblazeCommon.h"
 #include "PixelblazeClient.h"
 
-#define BIN_TYPE_PUT_SOURCE 1
-#define BIN_TYPE_PUT_BYTE_CODE 3
-#define BIN_TYPE_PREVIEW_IMAGE 4
-#define BIN_TYPE_PREVIEW_FRAME 5
-#define BIN_TYPE_GET_SOURCE 6
-#define BIN_TYPE_GET_PROGRAM_LIST 7
-#define BIN_TYPE_PUT_PIXEL_MAP 8
-#define BIN_TYPE_EXPANDER_CONFIG 9
-
-#define FAILED_TIMED_OUT 1
-#define FAILED_BUFFER_ALLOC_FAIL 2
-#define FAILED_MULTIPART_READ_INTERRUPTED 3
-#define FAILED_STREAM_WRITE_FAILURE 4
-#define FAILED_MALFORMED_HANDLER 5
-#define FAILED_CONNECTION_LOST 6
-
 #define EXPANDER_CHANNEL_BYTE_WIDTH 12
 
 static String GARBAGE = "GARBAGE";
@@ -32,9 +16,7 @@ static String GARBAGE = "GARBAGE";
 */
 class ReplyHandler {
 protected:
-    ReplyHandler(int _replyType, int _format) {
-        replyType = _replyType;
-        format = _format;
+    ReplyHandler(ReplyHandlerType replyType, WebsocketFormat format) : type(replyType), format(format) {
         requestTsMs = millis();
         satisfied = false;
     }
@@ -52,15 +34,16 @@ public:
 
     virtual bool cleanup() {}
 
-    virtual void replyFailed(int cause) {}
+    virtual void reportFailure(FailureCause cause) {}
 
     virtual bool isSatisfied() {
         return satisfied;
     }
 
 public:
-    int replyType;
-    int format;
+    WebsocketFormat format;
+    ReplyHandlerType type;
+
     unsigned long requestTsMs;
     bool satisfied;
 };
@@ -68,12 +51,10 @@ public:
 /*
   Special case handler that wraps any other handler and signals when it's been completed
 */
-#define HANDLER_SYNC 0
-
 class SyncHandler : public ReplyHandler {
 public:
     SyncHandler(ReplyHandler *_wrappedHandler, bool *_trueWhenFinished)
-            : ReplyHandler(HANDLER_SYNC, _wrappedHandler->format) {
+            : ReplyHandler(ReplyHandlerType::Sync, _wrappedHandler->format) {
         wrappedHandler = _wrappedHandler;
         trueWhenFinished = _trueWhenFinished;
     }
@@ -108,8 +89,8 @@ private:
 */
 class TextReplyHandler : public ReplyHandler {
 protected:
-    explicit TextReplyHandler(int replyType)
-            : ReplyHandler(replyType, TYPE_TEXT) {};
+    explicit TextReplyHandler(ReplyHandlerType type)
+            : ReplyHandler(type, WebsocketFormat::Text) {};
 
 public:
     ~TextReplyHandler() override = default;
@@ -125,11 +106,9 @@ public:
 */
 class BinaryReplyHandler : public ReplyHandler {
 protected:
-    BinaryReplyHandler(int replyType, String &_bufferId, int _binType, bool _clean)
-            : ReplyHandler(replyType, TYPE_BINARY) {
+    BinaryReplyHandler(ReplyHandlerType replyType, String &_bufferId, int rawBinType, bool clean)
+            : rawBinType(rawBinType), clean(clean), ReplyHandler(replyType, WebsocketFormat::Binary) {
         bufferId = String(_bufferId);
-        binType = _binType;
-        clean = _clean;
     };
 
 public:
@@ -154,7 +133,7 @@ public:
 
 public:
     String bufferId;
-    int binType;
+    int rawBinType;
 
 private:
     bool clean;
@@ -164,12 +143,10 @@ private:
  * Edge case handler for allowing interaction with arbitrary binary-fetching commands if they're unimplemented.
  * The stream provided to handle() is closed after it returns.
  */
-#define HANDLER_RAW_BINARY 1
-
 class RawBinaryHandler : public BinaryReplyHandler {
 public:
-    RawBinaryHandler(String &bufferId, int binType, bool clean = true)
-            : BinaryReplyHandler(HANDLER_RAW_BINARY, bufferId, binType, clean) {};
+    RawBinaryHandler(String &bufferId, int rawBinType, bool clean = true)
+            : BinaryReplyHandler(ReplyHandlerType::RawBinary, bufferId, rawBinType, clean) {};
 
     ~RawBinaryHandler() override = default;
 
@@ -177,15 +154,12 @@ public:
 };
 
 /**
- * Edge case handler for allowing interaction with arbitrary JSON commands if they're unimplemented. Note that any data extracted
- * in handle() must be copied, as it may be overwritten after handle() returns
+ * Edge case handler for allowing interaction with arbitrary JSON commands if they're unimplemented.
  */
-#define HANDLER_RAW_TEXT 2
-
 class RawTextHandler : public TextReplyHandler {
 public:
     RawTextHandler()
-            : TextReplyHandler(HANDLER_RAW_TEXT) {};
+            : TextReplyHandler(ReplyHandlerType::RawText) {};
 
     ~RawTextHandler() override = default;
 
@@ -215,15 +189,13 @@ private:
     size_t bufferLen;
 };
 
-
-#define HANDLER_ALL_PATTERNS 3
-
 class AllPatternsReplyHandler : public BinaryReplyHandler {
 public:
     explicit AllPatternsReplyHandler(void (*handleFn)(AllPatternIterator &), String &bufferId, bool clean,
-                                     void (*onError)(int))
+                                     void (*onError)(FailureCause))
             : handleFn(handleFn), onError(onError),
-              BinaryReplyHandler(HANDLER_ALL_PATTERNS, bufferId, BIN_TYPE_GET_PROGRAM_LIST, clean) {};
+              BinaryReplyHandler(ReplyHandlerType::AllPatterns, bufferId,
+                                 (int) BinaryMsgType::GetProgramList, clean) {};
 
     ~AllPatternsReplyHandler() override = default;
 
@@ -231,22 +203,20 @@ public:
         handleFn(iterator);
     };
 
-    void replyFailed(int cause) override {
+    void reportFailure(FailureCause cause) override {
         onError(cause);
     }
 
 private:
     void (*handleFn)(AllPatternIterator &);
 
-    void (*onError)(int);
+    void (*onError)(FailureCause);
 };
-
-#define HANDLER_PLAYLIST 4
 
 class PlaylistReplyHandler : public TextReplyHandler {
 public:
-    explicit PlaylistReplyHandler(void (*handlerFn)(Playlist &), void (*onError)(int))
-            : handlerFn(handlerFn), onError(onError), TextReplyHandler(HANDLER_PLAYLIST) {};
+    explicit PlaylistReplyHandler(void (*handlerFn)(Playlist &), void (*onError)(FailureCause))
+            : handlerFn(handlerFn), onError(onError), TextReplyHandler(ReplyHandlerType::Playlist) {};
 
     ~PlaylistReplyHandler() override = default;
 
@@ -254,7 +224,7 @@ public:
         handlerFn(playlist);
     };
 
-    void replyFailed(int cause) override {
+    void reportFailure(FailureCause cause) override {
         onError(cause);
     }
 
@@ -265,15 +235,13 @@ public:
 private:
     void (*handlerFn)(Playlist &);
 
-    void (*onError)(int);
+    void (*onError)(FailureCause);
 };
-
-#define HANDLER_PEERS 5
 
 class PeersReplyHandler : public TextReplyHandler {
 public:
-    PeersReplyHandler(void (*handlerFn)(Peer *, size_t), void (*onError)(int))
-            : handlerFn(handlerFn), onError(onError), TextReplyHandler(HANDLER_PEERS) {};
+    PeersReplyHandler(void (*handlerFn)(Peer *, size_t), void (*onError)(FailureCause))
+            : handlerFn(handlerFn), onError(onError), TextReplyHandler(ReplyHandlerType::Peers) {};
 
     ~PeersReplyHandler() override = default;
 
@@ -281,7 +249,7 @@ public:
         handlerFn(peers, numPeers);
     };
 
-    void replyFailed(int cause) override {
+    void reportFailure(FailureCause cause) override {
         onError(cause);
     }
 
@@ -292,17 +260,16 @@ public:
 private:
     void (*handlerFn)(Peer *, size_t);
 
-    void (*onError)(int);
+    void (*onError)(FailureCause);
 };
-
-#define HANDLER_PREVIEW_IMG 6
 
 class PreviewImageReplyHandler : public BinaryReplyHandler {
 public:
     explicit PreviewImageReplyHandler(String &patternId, void (*handlerFn)(String &, CloseableStream *), bool clean,
-                                      void (*onError)(int))
+                                      void (*onError)(FailureCause))
             : handlerFn(handlerFn), onError(onError),
-              BinaryReplyHandler(HANDLER_PREVIEW_IMG, patternId, BIN_TYPE_PREVIEW_IMAGE, clean) {};
+              BinaryReplyHandler(ReplyHandlerType::PreviewImage, patternId,
+                                 (int) BinaryMsgType::PreviewImage, clean) {};
 
     ~PreviewImageReplyHandler() override = default;
 
@@ -310,22 +277,20 @@ public:
         handlerFn(patternId, stream);
     };
 
-    void replyFailed(int cause) override {
+    void reportFailure(FailureCause cause) override {
         onError(cause);
     }
 
 private:
     void (*handlerFn)(String &, CloseableStream *);
 
-    void (*onError)(int);
+    void (*onError)(FailureCause);
 };
-
-#define HANDLER_SETTINGS 7
 
 class SettingsReplyHandler : public TextReplyHandler {
 public:
-    SettingsReplyHandler(void (*handlerFn)(Settings &), void (*onError)(int))
-            : handlerFn(handlerFn), onError(onError), TextReplyHandler(HANDLER_SETTINGS) {};
+    SettingsReplyHandler(void (*handlerFn)(Settings &), void (*onError)(FailureCause))
+            : handlerFn(handlerFn), onError(onError), TextReplyHandler(ReplyHandlerType::Settings) {};
 
     ~SettingsReplyHandler() override = default;
 
@@ -337,22 +302,20 @@ public:
         return json.containsKey("pixelCount");
     }
 
-    void replyFailed(int cause) override {
+    void reportFailure(FailureCause cause) override {
         onError(cause);
     }
 
 private:
     void (*handlerFn)(Settings &);
 
-    void (*onError)(int);
+    void (*onError)(FailureCause);
 };
-
-#define HANDLER_SEQ 8
 
 class SequencerReplyHandler : public TextReplyHandler {
 public:
-    SequencerReplyHandler(void (*handlerFn)(SequencerState &), void (*onError)(int))
-            : handlerFn(handlerFn), onError(onError), TextReplyHandler(HANDLER_SEQ) {};
+    SequencerReplyHandler(void (*handlerFn)(SequencerState &), void (*onError)(FailureCause))
+            : handlerFn(handlerFn), onError(onError), TextReplyHandler(ReplyHandlerType::Sequencer) {};
 
     ~SequencerReplyHandler() override = default;
 
@@ -364,39 +327,38 @@ public:
         return json.containsKey("activeProgram");
     }
 
-    void replyFailed(int cause) override {
+    void reportFailure(FailureCause cause) override {
         onError(cause);
     }
 
 private:
     void (*handlerFn)(SequencerState &);
 
-    void (*onError)(int);
+    void (*onError)(FailureCause);
 };
 
-#define HANDLER_EXPANDER_CONF 9
-
-class ExpanderConfigReplyHandler : public BinaryReplyHandler {
+class ExpanderChannelsReplyHandler : public BinaryReplyHandler {
 public:
-    explicit ExpanderConfigReplyHandler(void (*handlerFn)(ExpanderChannel*, size_t), String bufferId, bool clean,
-                                        void (*onError)(int))
+    explicit ExpanderChannelsReplyHandler(void (*handlerFn)(ExpanderChannel *, size_t), String bufferId, bool clean,
+                                          void (*onError)(FailureCause))
             : handlerFn(handlerFn), onError(onError),
-              BinaryReplyHandler(HANDLER_EXPANDER_CONF, bufferId, BIN_TYPE_EXPANDER_CONFIG, clean) {};
+              BinaryReplyHandler(ReplyHandlerType::Expander, bufferId,
+                                 (int) BinaryMsgType::ExpanderChannels, clean) {};
 
-    ~ExpanderConfigReplyHandler() override = default;
+    ~ExpanderChannelsReplyHandler() override = default;
 
-    void handle(ExpanderChannel* channels, size_t channelCount) {
+    void handle(ExpanderChannel *channels, size_t channelCount) {
         handlerFn(channels, channelCount);
     };
 
-    void replyFailed(int cause) override {
+    void reportFailure(FailureCause cause) override {
         onError(cause);
     }
 
 private:
-    void (*handlerFn)(ExpanderChannel*, size_t);
+    void (*handlerFn)(ExpanderChannel *, size_t);
 
-    void (*onError)(int);
+    void (*onError)(FailureCause);
 };
 
 /**
@@ -406,12 +368,10 @@ private:
  * be just discarded. If this handler picks up an ack from a previous command it could lie about the
  * roundtrip, but that seems worthwhile to not clog the reply queue.
  */
-#define HANDLER_PING 10
-
 class PingReplyHandler : public TextReplyHandler {
 public:
-    explicit PingReplyHandler(void (*handlerFn)(uint32_t), void (*onError)(int))
-            : handlerFn(handlerFn), onError(onError), TextReplyHandler(HANDLER_PING) {};
+    explicit PingReplyHandler(void (*handlerFn)(uint32_t), void (*onError)(FailureCause))
+            : handlerFn(handlerFn), onError(onError), TextReplyHandler(ReplyHandlerType::Ping) {};
 
     ~PingReplyHandler() override = default;
 
@@ -423,22 +383,20 @@ public:
         return json.containsKey("ack");  //Lots of commands return this, nothing really to do about it
     }
 
-    void replyFailed(int cause) override {
+    void reportFailure(FailureCause cause) override {
         onError(cause);
     }
 
 private:
     void (*handlerFn)(uint32_t);
 
-    void (*onError)(int);
+    void (*onError)(FailureCause);
 };
-
-#define HANDLER_PATTERN_CONTROLS 11
 
 class PatternControlReplyHandler : public TextReplyHandler {
 public:
-    PatternControlReplyHandler(void (*handlerFn)(String &, Control *, size_t), void (*onError)(int))
-            : handlerFn(handlerFn), onError(onError), TextReplyHandler(HANDLER_PATTERN_CONTROLS) {};
+    PatternControlReplyHandler(void (*handlerFn)(String &, Control *, size_t), void (*onError)(FailureCause))
+            : handlerFn(handlerFn), onError(onError), TextReplyHandler(ReplyHandlerType::PatternControls) {};
 
     ~PatternControlReplyHandler() override = default;
 
@@ -446,14 +404,14 @@ public:
         handlerFn(patternId, controls, numControls);
     };
 
-    void replyFailed(int cause) override {
+    void reportFailure(FailureCause cause) override {
         onError(cause);
     }
 
 private:
     void (*handlerFn)(String &, Control *, size_t);
 
-    void (*onError)(int);
+    void (*onError)(FailureCause);
 };
 
 #endif
