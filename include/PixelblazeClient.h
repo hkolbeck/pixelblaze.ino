@@ -89,6 +89,10 @@ public:
      */
     bool getPatterns(void (*handler)(AllPatternIterator &), void (*onError)(FailureCause) = logError);
 
+    #ifdef CLOSURES_SUPPORTED
+    bool getPatternsSync(void (*handler)(AllPatternIterator &), void (*onError)(FailureCause) = logError);
+    #endif
+
     /**
      * Get the contents of a playlist, along with some metadata about it and its current state
      *

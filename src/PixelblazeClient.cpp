@@ -66,6 +66,37 @@ bool PixelblazeClient::getPatterns(void (*handler)(AllPatternIterator &), void (
     return sendJson(json);
 }
 
+#ifdef CLOSURES_SUPPORTED
+bool getPatternsSync(void (*handler)(AllPatternIterator &), void (*onError)(FailureCause)) {
+    bool finished = false;
+    bool succeeded = false;
+
+    void (*syncHandler)(AllPatternIterator &)
+    syncHandler = [handler, &finished, &succeeded](AllPatternIterator &patterns) {
+        handler(patterns);
+        succeeded = true;
+        finished = true;
+    };
+
+    void (*syncOnError)(FailureCause) = [onError, &finished, &succeeded](FailureCause cause) {
+        onError(cause);
+        succeeded = false;
+        finished = true;
+    };
+
+    if (!getPatterns(syncHandler, syncOnError)) {
+        return false;
+    }
+
+    while (!finished) {
+        checkForInbound();
+    }
+
+    return succeeded;
+}
+#endif
+
+
 bool PixelblazeClient::getPlaylist(void (*handler)(Playlist &), String &playlistName, void (*onError)(FailureCause)) {
     auto *myHandler = new PlaylistReplyHandler(handler, onError);
     if (!enqueueReply(myHandler)) {
@@ -353,7 +384,8 @@ bool PixelblazeClient::getSequencerState(void (*seqHandler)(SequencerState &), v
     return getSystemState(noopSettings, seqHandler, noopExpander, (int) SettingReply::Sequencer, onError);
 }
 
-bool PixelblazeClient::getExpanderConfig(void (*expanderHandler)(ExpanderChannel *, size_t), void (*onError)(FailureCause)) {
+bool
+PixelblazeClient::getExpanderConfig(void (*expanderHandler)(ExpanderChannel *, size_t), void (*onError)(FailureCause)) {
     return getSystemState(noopSettings, noopSequencer, expanderHandler, (int) SettingReply::Expander, onError);
 }
 
@@ -485,7 +517,8 @@ bool PixelblazeClient::checkForInbound() {
             int repliesExamined = 0;
             while (repliesExamined <= queueLength()
                    && soughtFormat == WebsocketFormat::Binary
-                   && ((BinaryReplyHandler *) replyQueue[queueFront])->rawBinType == (int) BinaryMsgType::ExpanderChannels
+                   &&
+                   ((BinaryReplyHandler *) replyQueue[queueFront])->rawBinType == (int) BinaryMsgType::ExpanderChannels
                    && (format != WebsocketFormat::Binary || wsClient.peek() != (int) BinaryMsgType::ExpanderChannels)) {
                 //Expander configs can be non-optionally fetched by getConfig, and may never come if no expander is installed.
                 //If the head of the queue is seeking them and the current message isn't one, bump it to the back of the queue.
@@ -756,7 +789,7 @@ void PixelblazeClient::dispatchTextReply(ReplyHandler *genHandler) {
                 peers[peersFound].ipAddress = peer["address"].as<String>();
                 peers[peersFound].name = peer["name"].as<String>();
                 peers[peersFound].version = peer["ver"].as<String>();
-                peers[peersFound].isFollowing = !! peer["isFollowing"].as<int>();
+                peers[peersFound].isFollowing = !!peer["isFollowing"].as<int>();
                 peers[peersFound].nodeId = peer["nodeId"];
                 peers[peersFound].followerCount = peer["followerCount"];
 
@@ -1065,7 +1098,7 @@ bool PixelblazeClient::enqueueReplies(int num, ...) {
     va_list arguments;
     va_start(arguments, num);
     for (int idx = 0; idx < num; idx++) {
-        ReplyHandler *handler = va_arg(arguments, ReplyHandler*);
+        ReplyHandler *handler = va_arg(arguments, ReplyHandler * );
         if (handler && !handler->isSatisfied()) {
             toEnqueue++;
         }
@@ -1087,7 +1120,7 @@ bool PixelblazeClient::enqueueReplies(int num, ...) {
 
     va_start(arguments, num);
     for (int idx = 0; idx < num; idx++) {
-        ReplyHandler *handler = va_arg(arguments, ReplyHandler*);
+        ReplyHandler *handler = va_arg(arguments, ReplyHandler * );
         if (handler && !handler->isSatisfied()) {
             replyQueue[queueBack] = handler;
             queueBack = (queueBack + 1) % clientConfig.replyQueueSize;
@@ -1184,7 +1217,8 @@ bool PixelblazeClient::sendBinary(int binType, Stream &stream) {
 
             hasSent = true;
         } else if (read > 0) {
-            int frameType = hasSent ? (int) FramePosition::Last : (int) FramePosition::First | (int) FramePosition::Last;
+            int frameType = hasSent ? (int) FramePosition::Last : (int) FramePosition::First |
+                                                                  (int) FramePosition::Last;
             wsClient.beginMessage((int) WebsocketFormat::Binary);
             wsClient.write(binType);
             wsClient.write(frameType);
@@ -1222,6 +1256,7 @@ static String WGRB_STR = "WGRB";
 static String WRGB_STR = "WRGB";
 static String GRBW_STR = "GRBW";
 static String RGBW_STR = "RGBW";
+
 String *PixelblazeClient::getColorOrder(uint8_t code) {
     switch (code) {
         case 6:
